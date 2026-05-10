@@ -42,7 +42,7 @@ AiMaMi **不是** Codex 的 fork 或套壳 —— 它是一个独立的原生桌
 <p align="center">
   <img src="assets/console.png"  alt="AiMaMi" width="1200" height="812" />
 </p>
----
+
 
 ## 账号管理
 
