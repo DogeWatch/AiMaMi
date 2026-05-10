@@ -23,7 +23,9 @@
   <a href="#快速开始">快速开始</a> &bull;
   <a href="#许可证">许可证</a>
 </p>
-
+<p align="center">
+  <img src="console.png" alt="AiMaMi" />
+</p>
 ---
 
 ## 核心亮点
