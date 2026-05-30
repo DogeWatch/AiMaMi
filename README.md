@@ -1,8 +1,16 @@
-# AiMaMi
+<p align="center">
+  <img src="assets/app-icon-composed.png" alt="AiMaMi" width="128" height="128" />
+</p>
 
-**A native desktop companion for OpenAI Codex — manage accounts, routing, sessions, and local configuration in one place.**
+<h1 align="center">AiMaMi</h1>
 
-English · [简体中文](./README-cn.md)
+<p align="center">
+  <strong>A native desktop companion for OpenAI Codex — manage accounts, routing, sessions, and local configuration in one place.</strong>
+</p>
+
+<p align="center">
+  English · <a href="./README-cn.md">简体中文</a>
+</p>
 
 ---
 
@@ -30,6 +38,13 @@ AiMaMi is built with **Tauri 2, React, and Rust**. It consolidates these high-fr
 | **Settings & runtime** | Theme, language, quota refresh, API proxy, update checks; tray and macOS notch quota display |
 
 **Smart router note:** Relay models are forwarded through AiMaMi's local proxy. Keep AiMaMi running while Codex uses relay models.
+
+<p align="center">
+  <img src="assets/console.png" alt="AiMaMi" width="1200" height="812" />
+</p>
+<p align="center">
+  <img src="assets/88.png" alt="AiMaMi community QR code" width="400" height="300" />
+</p>
 
 ---
 
