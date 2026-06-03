@@ -43,7 +43,7 @@ AiMaMi is built with **Tauri 2, React, and Rust**. It consolidates these high-fr
   <img src="assets/console.png" alt="AiMaMi" width="1200" height="812" />
 </p>
 <p align="center">
-  <img src="assets/88.png" alt="AiMaMi community QR code" width="400" height="300" />
+  <img src="assets/qr1.png" alt="AiMaMi community QR code" width="400" height="300" />
 </p>
 
 ---
