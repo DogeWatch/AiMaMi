@@ -54,16 +54,6 @@ export interface ApiConnectivityPayload {
   usageLastError: string | null;
 }
 
-export interface UpdateInstallabilityPayload {
-  canInstall: boolean;
-  code: string;
-  executablePath: string | null;
-  bundlePath: string | null;
-  translocated: boolean;
-  quarantined: boolean;
-}
-
-
 export interface AppStatusPayload {
   paths: AppPathState;
   lastScanAt: number;

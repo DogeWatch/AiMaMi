@@ -13,6 +13,17 @@ use tauri::image::Image;
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, RunEvent};
 
+pub fn run_daemon_once_cli() -> Result<(), String> {
+    let repo = Repository::new();
+    let enabled = repo.auto_switch_config().enabled;
+    let payload = repo
+        .build_daemon_payload(enabled)
+        .map_err(|error| error.to_string())?;
+    let json = serde_json::to_string_pretty(&payload).map_err(|error| error.to_string())?;
+    println!("{json}");
+    Ok(())
+}
+
 pub fn run() {
     let shared_paths = Arc::new(CodexPaths::new());
 
@@ -29,24 +40,11 @@ pub fn run() {
     };
     let single_instance_guard = Rc::new(RefCell::new(Some(single_instance_guard)));
 
-    #[cfg(target_os = "windows")]
-    let updater_plugin_builder = {
-        let builder = tauri_plugin_updater::Builder::new();
-        if let Some(arg) = platform::update::windows_current_install_dir_arg() {
-            builder.installer_arg(arg)
-        } else {
-            builder
-        }
-    };
-    #[cfg(not(target_os = "windows"))]
-    let updater_plugin_builder = tauri_plugin_updater::Builder::new();
-
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(updater_plugin_builder.build())
         .manage(Mutex::new(Repository::new()))
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -120,11 +118,10 @@ pub fn run() {
             commands::system::detect_api_proxy_config,
             commands::system::get_usage_refresh_interval,
             commands::system::set_usage_refresh_interval,
+            commands::system::load_snapshot,
             commands::system::run_daemon_once,
             commands::system::diagnose,
             commands::system::restart_codex,
-            commands::system::graceful_restart_for_update,
-            commands::system::check_update_installability,
             commands::system::load_bootstrap_state,
             commands::system::open_path,
             commands::system::get_system_info,

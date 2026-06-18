@@ -7,9 +7,9 @@ import type {
   ApiModePayload,
   ApiProxyDetectPayload,
   ApiProxyTestPayload,
-  UpdateInstallabilityPayload,
   DaemonRunPayload,
   DiagnosePayload,
+  CoreSnapshotPayload,
   McpServerListPayload,
   McpServerMutationPayload,
   McpServerRemovePayload,
@@ -34,7 +34,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 
 export const api = {
   loadSnapshot: (localOnly = false) =>
-    invoke<CoreEnvelope<Record<string, unknown>>>("load_snapshot", { localOnly }),
+    invoke<CoreEnvelope<CoreSnapshotPayload>>("load_snapshot", { localOnly }),
 
   clean: () =>
     invoke<CoreEnvelope<CleanPayload>>("clean"),
@@ -66,9 +66,6 @@ export const api = {
   detectApiProxyConfig: () =>
     invoke<CoreEnvelope<ApiProxyDetectPayload>>("detect_api_proxy_config"),
 
-  checkUpdateInstallability: () =>
-    invoke<UpdateInstallabilityPayload>("check_update_installability"),
-
   runDaemonOnce: () =>
     invoke<CoreEnvelope<DaemonRunPayload>>("run_daemon_once"),
 
@@ -78,14 +75,20 @@ export const api = {
   restartCodex: () =>
     invoke<void>("restart_codex"),
 
-  gracefulRestartForUpdate: () =>
-    invoke<void>("graceful_restart_for_update"),
-
   loadMcpServers: () =>
     invoke<CoreEnvelope<McpServerListPayload>>("load_mcp_servers"),
 
-  upsertMcpServer: (name: string, config: Record<string, unknown>) =>
-    invoke<CoreEnvelope<McpServerMutationPayload>>("upsert_mcp_server", { name, config }),
+  upsertMcpServer: (server: {
+    name: string;
+    transport: string;
+    enabled: boolean;
+    command?: string;
+    args: string[];
+    url?: string;
+    headers: Record<string, string>;
+    environment: Record<string, string>;
+  }) =>
+    invoke<CoreEnvelope<McpServerMutationPayload>>("upsert_mcp_server", server),
 
   setMcpServerEnabled: (name: string, enabled: boolean) =>
     invoke<CoreEnvelope<McpServerMutationPayload>>("set_mcp_server_enabled", { name, enabled }),
@@ -100,37 +103,45 @@ export const api = {
     invoke<CoreEnvelope<SkillBackupListPayload>>("load_skill_backups"),
 
   importSkill: (sourcePath: string) =>
-    invoke<CoreEnvelope<SkillImportPayload>>("import_skill", { sourcePath }),
+    invoke<CoreEnvelope<SkillImportPayload>>("import_skill", { path: sourcePath }),
 
   removeSkill: (name: string) =>
-    invoke<CoreEnvelope<SkillRemovePayload>>("remove_skill", { name }),
+    invoke<CoreEnvelope<SkillRemovePayload>>("remove_skill", { id: name }),
 
   restoreSkillBackup: (name: string) =>
-    invoke<CoreEnvelope<SkillRestorePayload>>("restore_skill_backup", { name }),
+    invoke<CoreEnvelope<SkillRestorePayload>>("restore_skill_backup", { id: name }),
 
   deleteSkillBackup: (name: string) =>
-    invoke<CoreEnvelope<SkillDeleteBackupPayload>>("delete_skill_backup", { name }),
+    invoke<CoreEnvelope<SkillDeleteBackupPayload>>("delete_skill_backup", { id: name }),
 
   loadCustomInstructionState: () =>
     invoke<CoreEnvelope<CustomInstructionStatePayload>>("load_custom_instruction_state"),
 
-  previewCustomInstructionApply: (templateId: string, content: string) =>
+  previewCustomInstructionApply: (content: string) =>
     invoke<CoreEnvelope<CustomInstructionPreviewPayload>>("preview_custom_instruction_apply", {
-      templateId,
       content,
     }),
 
-  applyCustomInstruction: (templateId: string, content: string) =>
+  applyCustomInstruction: (params: {
+    content: string;
+    templateCode?: string;
+    templateTitle?: string;
+    source?: string;
+  }) =>
     invoke<CoreEnvelope<CustomInstructionStatePayload>>("apply_custom_instruction", {
-      templateId,
-      content,
+      content: params.content,
+      templateCode: params.templateCode,
+      templateTitle: params.templateTitle,
+      source: params.source,
     }),
 
   clearCustomInstructionBlock: () =>
     invoke<CoreEnvelope<CustomInstructionStatePayload>>("clear_custom_instruction_block"),
 
-  rollbackCustomInstruction: () =>
-    invoke<CoreEnvelope<CustomInstructionStatePayload>>("rollback_custom_instruction"),
+  rollbackCustomInstruction: (historyId: string) =>
+    invoke<CoreEnvelope<CustomInstructionStatePayload>>("rollback_custom_instruction", {
+      historyId,
+    }),
 
   hasNotch: () =>
     invoke<boolean>("has_notch").catch(() => false),

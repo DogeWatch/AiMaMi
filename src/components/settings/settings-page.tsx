@@ -5,7 +5,6 @@ import { api } from "@/lib/api";
 import type { ApiProxyMode } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ButtonBusyContent } from "@/components/ui/button-busy-content";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { AnimatedSegmentedControl } from "@/components/ui/animated-segmented-control";
@@ -18,7 +17,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Sun, Moon, Monitor, Globe, Download, Loader2 } from "lucide-react";
+import { Sun, Moon, Monitor, Globe, Loader2 } from "lucide-react";
 import { BentoCard } from "@/components/ui/bento-card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,7 +29,6 @@ import {
 import type { Theme } from "@/hooks/use-theme";
 const RUNTIME_STATE_DISPLAY_QUERY_KEY = ["runtime-state", "display"] as const;
 import { REFRESH_OPTIONS, type RefreshInterval } from "@/hooks/use-auto-refresh";
-import { useBusyAction } from "@/hooks/use-busy-action";
 import { isMacPlatform } from "@/lib/platform";
 import { ApiProxyDialog } from "@/components/runtime/api-proxy-dialog";
 
@@ -46,7 +44,6 @@ interface SettingsPageProps {
   setLanguage: (lang: string) => void;
   refreshInterval: RefreshInterval;
   setRefreshInterval: (v: RefreshInterval) => void;
-  onCheckUpdate: () => Promise<"available" | "up-to-date" | "error">;
   onRefreshUsageStatus?: () => Promise<unknown>;
 }
 
@@ -70,7 +67,6 @@ export function SettingsPage({
   setLanguage,
   refreshInterval,
   setRefreshInterval,
-  onCheckUpdate,
   onRefreshUsageStatus,
 }: SettingsPageProps) {
   const { t } = useTranslation();
@@ -91,8 +87,6 @@ export function SettingsPage({
   const [draftWeekly, setDraftWeekly] = useState(10);
   const [pendingEnable, setPendingEnable] = useState(false);
   const [proxyDialogOpen, setProxyDialogOpen] = useState(false);
-  const updateCheckAction = useBusyAction({ minVisibleMs: 600 });
-
   const openThresholdDialog = (enabling: boolean) => {
     setPendingEnable(enabling);
     setDraft5h(status?.autoSwitch.threshold5hPercent ?? 15);
@@ -199,34 +193,6 @@ export function SettingsPage({
       });
     },
   });
-
-  const checkingUpdate = updateCheckAction.busy;
-  const handleCheckUpdate = async () => {
-    await updateCheckAction.run(async () => {
-      try {
-        const result = await onCheckUpdate();
-        if (result === "up-to-date") {
-          toast({
-            title: t("settings.upToDate"),
-            description: t("settings.upToDateDesc"),
-            variant: "default",
-          });
-        } else if (result === "error") {
-          toast({
-            title: t("settings.updateCheckFailed"),
-            description: t("settings.updateCheckFailedDesc"),
-            variant: "destructive",
-          });
-        }
-      } catch {
-        toast({
-          title: t("settings.updateCheckFailed"),
-          description: t("settings.updateCheckFailedDesc"),
-          variant: "destructive",
-        });
-      }
-    });
-  };
 
   const [appVersion, setAppVersion] = useState("...");
   useEffect(() => {
@@ -378,22 +344,6 @@ export function SettingsPage({
           <span className=" text-sm text-muted-foreground">
             {appVersion}
           </span>
-        </SettingRow>
-        <SettingRow label={t("settings.checkUpdate")}>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCheckUpdate}
-            disabled={checkingUpdate}
-            aria-busy={checkingUpdate}
-          >
-            <ButtonBusyContent
-              busy={checkingUpdate}
-              idleIcon={<Download className="h-3.5 w-3.5 shrink-0" />}
-              idleLabel={t("settings.checkUpdate")}
-              busyLabel={t("settings.checkUpdateBusy")}
-            />
-          </Button>
         </SettingRow>
       </Section>
 

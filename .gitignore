@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Build
 dist/
@@ -10,6 +11,7 @@ src-tauri/target/
 # IDE
 .vscode/
 .idea/
+.codegraph/
 *.swp
 *.swo
 *~
@@ -30,3 +32,6 @@ pnpm-debug.log*
 
 # TypeScript
 *.tsbuildinfo
+
+# reference
+references/

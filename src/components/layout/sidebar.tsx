@@ -24,6 +24,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { AnimatedSegmentedControl } from "@/components/ui/animated-segmented-control";
+import sidebarLogoSrc from "../../../assets/app-icon.png";
 
 export const appNavItems: {
   route: Route;
@@ -43,7 +44,7 @@ const hiddenNavRoutes = new Set<Route>([]);
 export const SIDEBAR_EXPANDED_WIDTH_PX = 176 * 1.05;
 export const SIDEBAR_COLLAPSED_WIDTH_PX = 64;
 
-const SIDEBAR_LOGO_SRC = "/app-icon.png";
+const SIDEBAR_LOGO_SRC = sidebarLogoSrc;
 const SIDEBAR_LOGO_TOP_OFFSET_PX = -21;
 
 const navButtonClassName =

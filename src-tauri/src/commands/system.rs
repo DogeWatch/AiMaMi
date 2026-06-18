@@ -56,6 +56,15 @@ pub fn get_usage_refresh_interval(repo: State<'_, Mutex<Repository>>) -> Result<
 }
 
 #[tauri::command]
+pub fn load_snapshot(
+    repo: State<'_, Mutex<Repository>>,
+    _local_only: Option<bool>,
+) -> Result<CoreEnvelope<CoreSnapshotPayload>, String> {
+    let repo = repo.lock().map_err(|e| e.to_string())?;
+    repo.load_snapshot_local().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn set_usage_refresh_interval(
     app: AppHandle,
     repo: State<'_, Mutex<Repository>>,
@@ -249,41 +258,6 @@ fn get_windows_os_version() -> Option<String> {
     } else {
         Some(parts.join(" "))
     }
-}
-
-#[tauri::command]
-pub fn graceful_restart_for_update(app: tauri::AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        let bundle = exe
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-            .ok_or_else(|| "cannot resolve app bundle path".to_string())?;
-        let bundle_str = bundle.to_string_lossy().to_string();
-
-        std::process::Command::new("sh")
-            .arg("-c")
-            .arg(format!("sleep 1 && open \"{}\"", bundle_str))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-
-        app.exit(0);
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        app.restart();
-    }
-
-    #[allow(unreachable_code)]
-    Ok(())
-}
-
-#[tauri::command]
-pub fn check_update_installability() -> Result<UpdateInstallabilityPayload, String> {
-    Ok(crate::platform::update::check_update_installability())
 }
 
 #[tauri::command]

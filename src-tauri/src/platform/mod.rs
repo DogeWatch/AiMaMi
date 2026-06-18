@@ -14,5 +14,4 @@ pub mod single_instance;
 pub mod system_volume;
 #[cfg(target_os = "macos")]
 pub mod text_injection;
-pub mod update;
 pub mod windows;

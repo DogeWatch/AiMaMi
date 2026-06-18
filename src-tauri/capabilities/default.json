@@ -14,7 +14,6 @@
     "dialog:allow-confirm",
     "shell:allow-open",
     "process:default",
-    "process:allow-restart",
-    "updater:default"
+    "process:allow-restart"
   ]
 }
