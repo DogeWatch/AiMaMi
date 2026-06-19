@@ -46,7 +46,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Mutex::new(Repository::new()))
-        .setup(|app| {
+        .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
                 let win = window.clone();
                 window.on_window_event(move |event| {
@@ -64,6 +64,17 @@ pub fn run() {
                 .lock()
                 .map(|r| r.get_hotspot_enabled())
                 .unwrap_or(false);
+            match core::sessions::auto_sync_session_provider_buckets_to_active(&shared_paths) {
+                Ok(Some(ledger)) => eprintln!(
+                    "[AiMaMi] session provider auto-sync: target={}, files={}, state_threads={}",
+                    ledger.target_model_provider,
+                    ledger.files.len(),
+                    ledger.state_threads.len()
+                ),
+                Ok(None) => {}
+                Err(error) => eprintln!("[AiMaMi] session provider auto-sync failed: {error}"),
+            }
+            core::relay::spawn_relay_proxy_server(shared_paths.clone());
             eprintln!("[AiMaMi] startup: hotspot_enabled={hotspot_enabled}");
             commands::hotspot::register_hotspot_relayout_observers(app.handle());
             if hotspot_enabled && platform::screen::has_notch_screen() {
@@ -98,6 +109,15 @@ pub fn run() {
             commands::mcp::upsert_mcp_server,
             commands::mcp::set_mcp_server_enabled,
             commands::mcp::remove_mcp_server,
+            commands::relay::load_relay_state,
+            commands::relay::upsert_relay_provider,
+            commands::relay::activate_relay_provider,
+            commands::relay::delete_relay_provider,
+            commands::relay::test_relay_draft,
+            commands::sessions::load_sessions,
+            commands::sessions::delete_sessions,
+            commands::sessions::prepare_session_provider_migration,
+            commands::sessions::migrate_session_provider_buckets_to_active,
             commands::skills::load_installed_skills,
             commands::skills::load_skill_backups,
             commands::skills::import_skill,
@@ -116,6 +136,7 @@ pub fn run() {
             commands::system::set_api_proxy_config,
             commands::system::test_api_proxy_config,
             commands::system::detect_api_proxy_config,
+            commands::system::launch_codex_desktop_with_proxy,
             commands::system::get_usage_refresh_interval,
             commands::system::set_usage_refresh_interval,
             commands::system::load_snapshot,

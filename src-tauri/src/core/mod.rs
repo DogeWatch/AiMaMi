@@ -6,5 +6,7 @@ pub mod custom_instructions;
 pub mod mcp;
 pub mod models;
 pub mod quota_store;
+pub mod relay;
 pub mod repository;
+pub mod sessions;
 pub mod skills;

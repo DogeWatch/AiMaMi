@@ -17,7 +17,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Sun, Moon, Monitor, Globe, Loader2 } from "lucide-react";
+import { Sun, Moon, Monitor, Globe, Loader2, Rocket } from "lucide-react";
 import { BentoCard } from "@/components/ui/bento-card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -203,6 +203,24 @@ export function SettingsPage({
   }, []);
 
   const currentProxy = status?.api.proxy ?? { mode: "direct" as ApiProxyMode, url: null };
+  const canLaunchCodexWithProxy = currentProxy.mode === "manual" && Boolean(currentProxy.url);
+  const launchCodexMutation = useMutation({
+    mutationFn: () => api.launchCodexDesktopWithProxy(),
+    onSuccess: (result) => {
+      toast({
+        title: t("settings.codexLaunchStarted"),
+        description: t("settings.codexLaunchStartedDesc", { url: result.data.proxyUrl }),
+        variant: "success",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: t("settings.codexLaunchFailed"),
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <div className="space-y-8">
@@ -333,9 +351,24 @@ export function SettingsPage({
           }
           description={t("settings.apiProxyDesc")}
         >
-          <Button variant="outline" size="sm" onClick={openProxyDialog}>
-            {t("common.edit")}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={openProxyDialog}>
+              {t("common.edit")}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => launchCodexMutation.mutate()}
+              disabled={!canLaunchCodexWithProxy || launchCodexMutation.isPending}
+              title={!canLaunchCodexWithProxy ? t("settings.codexLaunchRequiresProxy") : undefined}
+            >
+              {launchCodexMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Rocket className="h-4 w-4" />
+              )}
+              {t("settings.launchCodex")}
+            </Button>
+          </div>
         </SettingRow>
       </Section>
 

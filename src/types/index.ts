@@ -382,6 +382,12 @@ export interface ApiProxyDetectPayload {
   probe: ApiProxyTestPayload;
 }
 
+export interface CodexDesktopLaunchPayload {
+  launched: boolean;
+  executablePath: string;
+  proxyUrl: string;
+}
+
 export interface DaemonRunPayload {
   executedAt: number;
   runOnce: boolean;
@@ -454,6 +460,126 @@ export interface UsageAnalyticsPayload {
   today: TodaySummary;
   sessionStats: SessionStats;
   dailyActivity: DailyActivity[];
+}
+
+export interface SessionRecordPayload {
+  id: string;
+  threadName: string;
+  projectPath: string | null;
+  projectName: string | null;
+  modelProvider: string | null;
+  parentSessionId: string | null;
+  updatedAt: number;
+  createdAt: number | null;
+  fileSize: number;
+  isConversationThread: boolean;
+  projectPathMissing: boolean;
+  path: string;
+}
+
+export interface SessionProviderBucketPayload {
+  modelProvider: string;
+  count: number;
+  active: boolean;
+}
+
+export interface SessionProviderMigrationPreviewPayload {
+  sourceModelProvider: string;
+  targetModelProvider: string;
+  fileSessionCount: number;
+  stateThreadCount: number | null;
+  required: boolean;
+}
+
+export interface SessionProviderMigrationFilePayload {
+  id: string;
+  path: string;
+  backupPath: string;
+  originalModelProvider: string;
+}
+
+export interface SessionProviderMigrationThreadPayload {
+  id: string;
+  rolloutPath: string;
+  originalModelProvider: string;
+}
+
+export interface SessionProviderMigrationLedgerPayload {
+  path: string;
+  createdAt: number;
+  sourceModelProvider: string;
+  targetModelProvider: string;
+  fileSessions: SessionProviderMigrationFilePayload[];
+  stateThreads: SessionProviderMigrationThreadPayload[];
+  stateIndexError: string | null;
+}
+
+export interface SessionsListPayload {
+  items: SessionRecordPayload[];
+  total: number;
+  activeModelProvider: string;
+  providerBuckets: SessionProviderBucketPayload[];
+  stateProviderBuckets: SessionProviderBucketPayload[];
+  stateIndexAvailable: boolean;
+  stateIndexError: string | null;
+  migrationPreview: SessionProviderMigrationPreviewPayload;
+  sourcePath: string;
+  archivePath: string;
+  lastScanAt: number;
+}
+
+export interface SessionsDeletePayload {
+  requestedIds: string[];
+  deletedIds: string[];
+  skippedIds: string[];
+  deletedCount: number;
+  sourcePath: string;
+  archivePath: string;
+}
+
+export interface RelayProviderDraftPayload {
+  id?: string | null;
+  name: string;
+  baseUrl: string;
+  apiKey?: string | null;
+  model: string;
+  wireApi: string;
+}
+
+export interface RelayProviderPayload {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKeyStored: boolean;
+  model: string;
+  wireApi: string;
+  active: boolean;
+  modelsSample: string[];
+  lastError: string | null;
+}
+
+export interface RelayDiagnosticsPayload {
+  registryExists: boolean;
+  configExists: boolean;
+  managedBlockPresent: boolean;
+  activeProviderConfigured: boolean;
+  relayServerReachable: boolean;
+  issueMessage: string | null;
+}
+
+export interface RelayStatePayload {
+  providers: RelayProviderPayload[];
+  activeProviderId: string | null;
+  sourcePath: string;
+  codexConfigPath: string;
+  diagnostics: RelayDiagnosticsPayload;
+}
+
+export interface RelayTestPayload {
+  ok: boolean;
+  statusCode: number | null;
+  models: string[];
+  errorMessage: string | null;
 }
 
 export interface QuotaHistoryPoint {

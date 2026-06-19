@@ -1,6 +1,7 @@
 use crate::core::models::*;
 use crate::core::repository::{usage_refresh_interval_seconds, Repository};
 use serde::Serialize;
+use std::process::Command;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
@@ -113,6 +114,30 @@ pub async fn detect_api_proxy_config(
     })
     .await
     .map_err(|e| format!("Blocking command task failed: {e}"))?
+}
+
+#[tauri::command]
+pub fn launch_codex_desktop_with_proxy(
+    repo: State<'_, Mutex<Repository>>,
+) -> Result<CoreEnvelope<CodexDesktopLaunchPayload>, String> {
+    let plan = {
+        let repo = repo.lock().map_err(|e| e.to_string())?;
+        repo.codex_desktop_launch_plan()
+            .map_err(|e| e.to_string())?
+    };
+
+    let mut command = Command::new(&plan.executable_path);
+    command.args(&plan.args);
+    for (key, value) in &plan.env {
+        command.env(key, value);
+    }
+    command.spawn().map_err(|e| e.to_string())?;
+
+    Ok(CoreEnvelope::ok(CodexDesktopLaunchPayload {
+        launched: true,
+        executable_path: plan.executable_path.display().to_string(),
+        proxy_url: plan.proxy_url,
+    }))
 }
 
 fn load_api_request_context_from_repo(

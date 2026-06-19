@@ -5,11 +5,19 @@ import type {
   AutoSwitchConfigPayload,
   ApiProxyMode,
   ApiModePayload,
+  CodexDesktopLaunchPayload,
   ApiProxyDetectPayload,
   ApiProxyTestPayload,
   DaemonRunPayload,
   DiagnosePayload,
   CoreSnapshotPayload,
+  SessionsDeletePayload,
+  SessionProviderMigrationLedgerPayload,
+  SessionsListPayload,
+  RelayProviderDraftPayload,
+  RelayProviderPayload,
+  RelayStatePayload,
+  RelayTestPayload,
   McpServerListPayload,
   McpServerMutationPayload,
   McpServerRemovePayload,
@@ -66,6 +74,9 @@ export const api = {
   detectApiProxyConfig: () =>
     invoke<CoreEnvelope<ApiProxyDetectPayload>>("detect_api_proxy_config"),
 
+  launchCodexDesktopWithProxy: () =>
+    invoke<CoreEnvelope<CodexDesktopLaunchPayload>>("launch_codex_desktop_with_proxy"),
+
   runDaemonOnce: () =>
     invoke<CoreEnvelope<DaemonRunPayload>>("run_daemon_once"),
 
@@ -74,6 +85,37 @@ export const api = {
 
   restartCodex: () =>
     invoke<void>("restart_codex"),
+
+  loadSessions: () =>
+    invoke<CoreEnvelope<SessionsListPayload>>("load_sessions"),
+
+  deleteSessions: (ids: string[]) =>
+    invoke<CoreEnvelope<SessionsDeletePayload>>("delete_sessions", { ids }),
+
+  prepareSessionProviderMigration: () =>
+    invoke<CoreEnvelope<SessionProviderMigrationLedgerPayload>>(
+      "prepare_session_provider_migration",
+    ),
+
+  migrateSessionProviderBucketsToActive: () =>
+    invoke<CoreEnvelope<SessionProviderMigrationLedgerPayload[]>>(
+      "migrate_session_provider_buckets_to_active",
+    ),
+
+  loadRelayState: () =>
+    invoke<CoreEnvelope<RelayStatePayload>>("load_relay_state"),
+
+  upsertRelayProvider: (input: RelayProviderDraftPayload) =>
+    invoke<CoreEnvelope<RelayProviderPayload>>("upsert_relay_provider", { input }),
+
+  activateRelayProvider: (providerId: string) =>
+    invoke<CoreEnvelope<RelayStatePayload>>("activate_relay_provider", { providerId }),
+
+  deleteRelayProvider: (providerId: string) =>
+    invoke<CoreEnvelope<RelayStatePayload>>("delete_relay_provider", { providerId }),
+
+  testRelayDraft: (input: RelayProviderDraftPayload) =>
+    invoke<CoreEnvelope<RelayTestPayload>>("test_relay_draft", { input }),
 
   loadMcpServers: () =>
     invoke<CoreEnvelope<McpServerListPayload>>("load_mcp_servers"),

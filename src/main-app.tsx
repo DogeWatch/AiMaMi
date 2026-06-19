@@ -41,6 +41,12 @@ const SettingsPage = lazy(() =>
 const OverviewPage = lazy(() =>
   import("@/components/overview/overview-page").then((module) => ({ default: module.OverviewPage })),
 );
+const SessionsPage = lazy(() =>
+  import("@/components/sessions/sessions-page").then((module) => ({ default: module.SessionsPage })),
+);
+const ProvidersPage = lazy(() =>
+  import("@/components/providers/providers-page").then((module) => ({ default: module.ProvidersPage })),
+);
 
 const DRAG_REGION_HEIGHT = isMacPlatform() ? 48 : 0;
 const queryClient = createAppQueryClient();
@@ -80,6 +86,8 @@ function MainApp() {
         import("@/components/maintenance/maintenance-page"),
         import("@/components/settings/settings-page"),
         import("@/components/overview/overview-page"),
+        import("@/components/sessions/sessions-page"),
+        import("@/components/providers/providers-page"),
       ]);
     }
   }, [prewarmRoutes]);
@@ -88,6 +96,10 @@ function MainApp() {
     switch (targetRoute) {
       case "overview":
         return <OverviewPage />;
+      case "sessions":
+        return <SessionsPage />;
+      case "providers":
+        return <ProvidersPage />;
       case "mcp":
         return <McpPage />;
       case "skills":
@@ -123,6 +135,8 @@ function MainApp() {
 
   const routeOrder: Route[] = [
     "overview",
+    "sessions",
+    "providers",
     "customInstructions",
     "mcp",
     "skills",

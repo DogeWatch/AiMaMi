@@ -89,6 +89,10 @@ fn default_usage_refresh_interval() -> String {
     "1m".to_string()
 }
 
+fn default_codex_desktop_executable_path() -> PathBuf {
+    PathBuf::from("/Applications/Codex.app/Contents/MacOS/Codex")
+}
+
 fn normalize_usage_refresh_interval(interval: &str) -> Option<&'static str> {
     match interval {
         "30s" => Some("30s"),
@@ -139,6 +143,14 @@ pub(crate) struct ApiDiagnostics {
     pub last_usage_failure_account: Option<String>,
     pub last_name_failure: Option<String>,
     pub last_name_failure_account: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CodexDesktopLaunchPlan {
+    pub executable_path: PathBuf,
+    pub proxy_url: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
 }
 
 pub(crate) struct LoadedState {
@@ -363,6 +375,48 @@ impl Repository {
             .and_then(|auth| make_api_request_context(&auth));
         let payload = crate::core::api_client::detect_api_proxy_config(context.as_ref());
         Ok(CoreEnvelope::ok(payload))
+    }
+
+    pub(crate) fn codex_desktop_launch_plan(&self) -> Result<CodexDesktopLaunchPlan, CoreError> {
+        self.codex_desktop_launch_plan_with_executable(default_codex_desktop_executable_path())
+    }
+
+    pub(crate) fn codex_desktop_launch_plan_with_executable(
+        &self,
+        executable_path: PathBuf,
+    ) -> Result<CodexDesktopLaunchPlan, CoreError> {
+        if !executable_path.exists() {
+            return Err(CoreError::NotFound(format!(
+                "Codex Desktop executable not found: {}",
+                executable_path.display()
+            )));
+        }
+
+        let proxy = crate::core::api_client::sanitize_proxy_config(&self.load_settings().api_proxy)?;
+        let proxy_url = proxy.url.ok_or_else(|| {
+            CoreError::InvalidData(
+                "Manual proxy is required before launching Codex Desktop with proxy".into(),
+            )
+        })?;
+        let env = [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ]
+        .into_iter()
+        .map(|key| (key.to_string(), proxy_url.clone()))
+        .collect();
+        let args = vec![format!("--proxy-server={proxy_url}")];
+
+        Ok(CodexDesktopLaunchPlan {
+            executable_path,
+            proxy_url,
+            args,
+            env,
+        })
     }
 
     pub(crate) fn build_daemon_payload(
@@ -1197,6 +1251,52 @@ mod tests {
             snapshot.status.api.proxy.url.as_deref(),
             Some("socks5://127.0.0.1:7890")
         );
+
+        let _ = fs::remove_dir_all(codex_home);
+    }
+
+    #[test]
+    fn codex_desktop_launch_plan_uses_manual_api_proxy() {
+        let (repo, codex_home) = make_test_repo("codex-launch-proxy");
+        let executable = codex_home.join("Codex");
+        fs::write(&executable, "").unwrap();
+
+        repo.set_api_proxy_config(ApiProxyMode::Manual, Some("http://127.0.0.1:7897".into()))
+            .unwrap();
+
+        let plan = repo
+            .codex_desktop_launch_plan_with_executable(executable.clone())
+            .unwrap();
+
+        assert_eq!(plan.executable_path, executable);
+        assert_eq!(plan.proxy_url, "http://127.0.0.1:7897");
+        assert_eq!(plan.args, vec!["--proxy-server=http://127.0.0.1:7897"]);
+        assert!(plan
+            .env
+            .contains(&("HTTP_PROXY".into(), "http://127.0.0.1:7897".into())));
+        assert!(plan
+            .env
+            .contains(&("HTTPS_PROXY".into(), "http://127.0.0.1:7897".into())));
+        assert!(plan
+            .env
+            .contains(&("ALL_PROXY".into(), "http://127.0.0.1:7897".into())));
+
+        let _ = fs::remove_dir_all(codex_home);
+    }
+
+    #[test]
+    fn codex_desktop_launch_plan_requires_manual_api_proxy() {
+        let (repo, codex_home) = make_test_repo("codex-launch-direct");
+        let executable = codex_home.join("Codex");
+        fs::write(&executable, "").unwrap();
+
+        let error = repo
+            .codex_desktop_launch_plan_with_executable(executable)
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("Manual proxy is required before launching Codex Desktop with proxy"));
 
         let _ = fs::remove_dir_all(codex_home);
     }

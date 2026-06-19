@@ -718,6 +718,14 @@ pub struct ApiProxyDetectPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct CodexDesktopLaunchPayload {
+    pub launched: bool,
+    pub executable_path: String,
+    pub proxy_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateInstallabilityPayload {
     pub can_install: bool,
     pub code: String,

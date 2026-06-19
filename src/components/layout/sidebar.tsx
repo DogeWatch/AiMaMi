@@ -1,6 +1,8 @@
 import { useTranslation } from "react-i18next";
 import {
   LayoutDashboard,
+  MessagesSquare,
+  RadioTower,
   FileCode2,
   Server,
   Sparkles,
@@ -32,6 +34,8 @@ export const appNavItems: {
   labelKey: string;
 }[] = [
   { route: "overview", icon: LayoutDashboard, labelKey: "nav.overview" },
+  { route: "sessions", icon: MessagesSquare, labelKey: "nav.sessions" },
+  { route: "providers", icon: RadioTower, labelKey: "nav.providers" },
   { route: "customInstructions", icon: FileCode2, labelKey: "nav.customInstructions" },
   { route: "mcp", icon: Server, labelKey: "nav.mcp" },
   { route: "skills", icon: Sparkles, labelKey: "nav.skills" },
