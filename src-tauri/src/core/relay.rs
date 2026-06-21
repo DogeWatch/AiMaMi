@@ -2,14 +2,14 @@ use crate::core::models::{ApiProxyConfigPayload, CoreError};
 use crate::platform::paths::CodexPaths;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::{Read as IoRead, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const RELAY_REGISTRY_FILE: &str = "relay-providers.json";
 const RELAY_CONFIG_BACKUP_FILE: &str = "relay-config-backup.json";
@@ -23,6 +23,18 @@ const RELAY_PROVIDER_MANAGED_BLOCK_BEGIN: &str =
     "# --- AiMaMi Relay Managed Block (providers) ---";
 const RELAY_PROVIDER_MANAGED_BLOCK_END: &str =
     "# --- End AiMaMi Relay Managed Block (providers) ---";
+const PROVIDER_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
+const PROVIDER_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+];
+const PROVIDER_MAX_CONCURRENT_REQUESTS: usize = 20;
+
+static PROVIDER_RATE_SLOTS: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+static PROVIDER_CONCURRENCY_LIMITS: OnceLock<
+    Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>,
+> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -540,13 +552,7 @@ async fn forward_provider_responses_request(
 ) -> Result<RelayHttpResponse, CoreError> {
     let url = responses_url(&provider.base_url, provider_responses_endpoint(endpoint))?;
     let client = relay_http_client(paths)?;
-    let mut request = client
-        .post(url)
-        .header("content-type", "application/json")
-        .body(body.to_vec());
-    if let Some(api_key) = provider_api_key(provider) {
-        request = request.bearer_auth(api_key);
-    } else {
+    let Some(api_key) = provider_api_key(provider) else {
         return Ok(json_response(
             401,
             serde_json::json!({
@@ -556,17 +562,25 @@ async fn forward_provider_responses_request(
                 }
             }),
         ));
-    }
+    };
 
-    let response = request.send().await?;
-    let status_code = response.status().as_u16();
+    let response = send_rate_limited_provider_request(
+        &client,
+        provider,
+        &url,
+        &api_key,
+        ProviderRequestBody::Bytes(body.to_vec()),
+    )
+    .await?;
+    let status_code = response.response.status().as_u16();
     let content_type = response
+        .response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .unwrap_or("application/json")
         .to_string();
-    let body = response.bytes().await?.to_vec();
+    let body = response.response.bytes().await?.to_vec();
     let body = normalize_provider_sse_body(provider, &content_type, body);
     Ok(RelayHttpResponse {
         status_code,
@@ -584,10 +598,7 @@ async fn forward_provider_chat_responses_request(
     let chat_body = responses_to_chat_request_body(&payload)?;
     let url = chat_completions_url(&provider.base_url)?;
     let client = relay_http_client(paths)?;
-    let mut request = client.post(url).header("content-type", "application/json").json(&chat_body);
-    if let Some(api_key) = provider_api_key(provider) {
-        request = request.bearer_auth(api_key);
-    } else {
+    let Some(api_key) = provider_api_key(provider) else {
         return Ok(json_response(
             401,
             serde_json::json!({
@@ -597,17 +608,25 @@ async fn forward_provider_chat_responses_request(
                 }
             }),
         ));
-    }
+    };
 
-    let response = request.send().await?;
-    let status_code = response.status().as_u16();
+    let response = send_rate_limited_provider_request(
+        &client,
+        provider,
+        &url,
+        &api_key,
+        ProviderRequestBody::Json(chat_body.clone()),
+    )
+    .await?;
+    let status_code = response.response.status().as_u16();
     let content_type = response
+        .response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .unwrap_or("application/json")
         .to_string();
-    let body = response.bytes().await?.to_vec();
+    let body = response.response.bytes().await?.to_vec();
     let body = if is_event_stream(&content_type) {
         chat_sse_to_responses_sse(&body, chat_body.get("model").and_then(Value::as_str).unwrap_or("model"))?
     } else {
@@ -726,7 +745,7 @@ async fn write_relay_responses_stream(
                 return Ok(());
             }
             };
-        write_upstream_response_stream(stream, &mut upstream, normalize_dashscope_sse).await
+        write_upstream_response_stream(stream, &mut upstream.response, normalize_dashscope_sse).await
     } else {
         let mut upstream = match send_openai_responses_request(
             paths,
@@ -763,19 +782,22 @@ async fn send_provider_responses_request(
     provider: &RelayProviderRecord,
     body: &[u8],
     endpoint: RelayResponsesEndpoint,
-) -> Result<Option<reqwest::Response>, CoreError> {
+) -> Result<Option<ProviderHttpResponse>, CoreError> {
     let url = responses_url(&provider.base_url, provider_responses_endpoint(endpoint))?;
     let client = relay_http_client(paths)?;
-    let mut request = client
-        .post(url)
-        .header("content-type", "application/json")
-        .body(body.to_vec());
-    if let Some(api_key) = provider_api_key(provider) {
-        request = request.bearer_auth(api_key);
-    } else {
+    let Some(api_key) = provider_api_key(provider) else {
         return Ok(None);
-    }
-    Ok(Some(request.send().await?))
+    };
+    Ok(Some(
+        send_rate_limited_provider_request(
+            &client,
+            provider,
+            &url,
+            &api_key,
+            ProviderRequestBody::Bytes(body.to_vec()),
+        )
+        .await?,
+    ))
 }
 
 async fn write_provider_chat_responses_stream(
@@ -790,10 +812,7 @@ async fn write_provider_chat_responses_stream(
     let chat_body = responses_to_chat_request_body(&payload)?;
     let url = chat_completions_url(&provider.base_url)?;
     let client = relay_http_client(paths)?;
-    let mut request = client.post(url).header("content-type", "application/json").json(&chat_body);
-    if let Some(api_key) = provider_api_key(provider) {
-        request = request.bearer_auth(api_key);
-    } else {
+    let Some(api_key) = provider_api_key(provider) else {
         write_http_response(
             stream,
             json_response(
@@ -808,18 +827,26 @@ async fn write_provider_chat_responses_stream(
         )
         .await?;
         return Ok(());
-    }
+    };
 
-    let mut upstream = request.send().await?;
-    let status_code = upstream.status().as_u16();
+    let mut upstream = send_rate_limited_provider_request(
+        &client,
+        provider,
+        &url,
+        &api_key,
+        ProviderRequestBody::Json(chat_body.clone()),
+    )
+    .await?;
+    let status_code = upstream.response.status().as_u16();
     let content_type = upstream
+        .response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .unwrap_or("application/json")
         .to_string();
     if !is_event_stream(&content_type) {
-        let body = upstream.bytes().await?.to_vec();
+        let body = upstream.response.bytes().await?.to_vec();
         let body = chat_json_to_responses_json(
             &body,
             chat_body.get("model").and_then(Value::as_str).unwrap_or("model"),
@@ -845,7 +872,7 @@ async fn write_provider_chat_responses_stream(
     let mut adapter = ChatToResponsesSseAdapter::new(
         chat_body.get("model").and_then(Value::as_str).unwrap_or("model"),
     );
-    while let Some(chunk) = upstream.chunk().await? {
+    while let Some(chunk) = upstream.response.chunk().await? {
         let output = adapter.push(chunk.as_ref())?;
         if !output.is_empty() {
             stream.write_all(&output).await?;
@@ -2967,6 +2994,7 @@ fn status_text(status_code: u16) -> &'static str {
         400 => "Bad Request",
         401 => "Unauthorized",
         404 => "Not Found",
+        429 => "Too Many Requests",
         501 => "Not Implemented",
         502 => "Bad Gateway",
         _ => "OK",
@@ -2991,6 +3019,123 @@ fn error_response(error: CoreError) -> RelayHttpResponse {
             }
         }),
     )
+}
+
+async fn send_rate_limited_provider_request(
+    client: &reqwest::Client,
+    provider: &RelayProviderRecord,
+    url: &str,
+    api_key: &str,
+    body: ProviderRequestBody,
+) -> Result<ProviderHttpResponse, CoreError> {
+    let mut retry_after: Option<Duration> = None;
+    for attempt in 0..=PROVIDER_RETRY_DELAYS.len() {
+        if attempt > 0 {
+            let delay = retry_after.unwrap_or(PROVIDER_RETRY_DELAYS[attempt - 1]);
+            tokio::time::sleep(delay).await;
+        }
+        wait_for_provider_rate_slot(provider).await;
+        let permit = acquire_provider_request_permit(provider).await?;
+        let response = build_provider_request(client, url, api_key, &body)
+            .send()
+            .await?;
+        if response.status().as_u16() != 429 || attempt == PROVIDER_RETRY_DELAYS.len() {
+            return Ok(ProviderHttpResponse {
+                response,
+                _permit: permit,
+            });
+        }
+        retry_after = parse_retry_after(response.headers());
+    }
+    unreachable!("provider retry loop always returns")
+}
+
+async fn acquire_provider_request_permit(
+    provider: &RelayProviderRecord,
+) -> Result<tokio::sync::OwnedSemaphorePermit, CoreError> {
+    let key = provider_limit_key(provider);
+    let semaphore = {
+        let limits = PROVIDER_CONCURRENCY_LIMITS.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut limits = limits.lock().unwrap();
+        limits
+            .entry(key)
+            .or_insert_with(|| {
+                Arc::new(tokio::sync::Semaphore::new(
+                    PROVIDER_MAX_CONCURRENT_REQUESTS,
+                ))
+            })
+            .clone()
+    };
+    semaphore
+        .acquire_owned()
+        .await
+        .map_err(|_| CoreError::OperationFailed("Provider request limiter closed".to_string()))
+}
+
+fn build_provider_request<'a>(
+    client: &'a reqwest::Client,
+    url: &'a str,
+    api_key: &'a str,
+    body: &'a ProviderRequestBody,
+) -> reqwest::RequestBuilder {
+    let request = client
+        .post(url)
+        .header("content-type", "application/json")
+        .bearer_auth(api_key);
+    match body {
+        ProviderRequestBody::Bytes(body) => request.body(body.clone()),
+        ProviderRequestBody::Json(body) => request.json(body),
+    }
+}
+
+async fn wait_for_provider_rate_slot(provider: &RelayProviderRecord) {
+    let key = provider_limit_key(provider);
+    let sleep_for = {
+        let now = Instant::now();
+        let slots = PROVIDER_RATE_SLOTS.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut slots = slots.lock().unwrap();
+        let next_available = slots.entry(key).or_insert(now);
+        if *next_available <= now {
+            *next_available = now + PROVIDER_REQUEST_INTERVAL;
+            None
+        } else {
+            let delay = *next_available - now;
+            *next_available += PROVIDER_REQUEST_INTERVAL;
+            Some(delay)
+        }
+    };
+    if let Some(delay) = sleep_for {
+        tokio::time::sleep(delay).await;
+    }
+}
+
+fn provider_limit_key(provider: &RelayProviderRecord) -> String {
+    format!("{}|{}", provider.id, provider.base_url)
+}
+
+fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    let value = headers
+        .get("retry-after")
+        .or_else(|| headers.get("Retry-After"))?;
+    let value = value.to_str().ok()?;
+    // Retry-After can be seconds (e.g. "120") or HTTP-date; we only handle seconds.
+    let seconds: u64 = value.trim().parse().ok()?;
+    if seconds == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(seconds))
+    }
+}
+
+struct ProviderHttpResponse {
+    response: reqwest::Response,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+}
+
+#[derive(Clone)]
+enum ProviderRequestBody {
+    Bytes(Vec<u8>),
+    Json(Value),
 }
 
 fn relay_http_client(paths: &CodexPaths) -> Result<reqwest::Client, CoreError> {
@@ -4088,6 +4233,269 @@ wire_api = "responses"
         assert_eq!(body["output"][0]["content"][0]["text"], "OK");
         handle.join().unwrap();
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn relay_provider_retries_429_with_backoff() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = thread::spawn(move || {
+            for attempt in 0..3 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0_u8; 4096];
+                let read = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..read]);
+                assert!(request.starts_with("POST /v1/chat/completions "));
+                if attempt < 2 {
+                    let body = r#"{"error":{"message":"rate limited","type":"rate_limit"}}"#;
+                    let response = format!(
+                        "HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    stream.write_all(response.as_bytes()).unwrap();
+                } else {
+                    let body = r#"{"id":"chatcmpl_retry","object":"chat.completion","created":1,"model":"glm-5.2","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    stream.write_all(response.as_bytes()).unwrap();
+                }
+            }
+        });
+
+        let (paths, root) = paths("provider-retry-429");
+        upsert_relay_provider(
+            &paths,
+            RelayProviderDraftPayload {
+                id: Some("dashscope".into()),
+                name: "DashScope".into(),
+                base_url: format!("http://{addr}/v1"),
+                api_key: Some("dashscope-key".into()),
+                model: "glm-5.2".into(),
+                wire_api: "responses".into(),
+            },
+        )
+        .unwrap();
+        activate_relay_provider(&paths, "dashscope").unwrap();
+
+        let body = r#"{"model":"glm-5.2","input":"hello"}"#;
+        let request = format!(
+            "POST /v1/responses HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let response = relay_http_response_for_request(&paths, request.as_bytes())
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&response.body).unwrap();
+
+        assert_eq!(response.status_code, 200);
+        assert_eq!(body["output"][0]["content"][0]["text"], "OK");
+        handle.join().unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn relay_provider_smooths_concurrent_requests() {
+        use std::sync::{Arc, Mutex};
+        use std::time::Instant;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let arrivals = Arc::new(Mutex::new(Vec::new()));
+        let server_arrivals = Arc::clone(&arrivals);
+        let handle = thread::spawn(move || {
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                server_arrivals.lock().unwrap().push(Instant::now());
+                let mut request = [0_u8; 4096];
+                let read = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..read]);
+                assert!(request.starts_with("POST /v1/chat/completions "));
+                let body = r#"{"id":"chatcmpl_smooth","object":"chat.completion","created":1,"model":"glm-5.2","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+
+        let (paths, root) = paths("provider-smooth-concurrency");
+        upsert_relay_provider(
+            &paths,
+            RelayProviderDraftPayload {
+                id: Some("dashscope".into()),
+                name: "DashScope".into(),
+                base_url: format!("http://{addr}/v1"),
+                api_key: Some("dashscope-key".into()),
+                model: "glm-5.2".into(),
+                wire_api: "responses".into(),
+            },
+        )
+        .unwrap();
+        activate_relay_provider(&paths, "dashscope").unwrap();
+
+        let body = r#"{"model":"glm-5.2","input":"hello"}"#;
+        let request = format!(
+            "POST /v1/responses HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let first = relay_http_response_for_request(&paths, request.as_bytes());
+        let second = relay_http_response_for_request(&paths, request.as_bytes());
+        let (first, second) = tokio::join!(first, second);
+
+        assert_eq!(first.unwrap().status_code, 200);
+        assert_eq!(second.unwrap().status_code, 200);
+        handle.join().unwrap();
+        let arrivals = arrivals.lock().unwrap();
+        assert_eq!(arrivals.len(), 2);
+        assert!(arrivals[1].duration_since(arrivals[0]) >= Duration::from_millis(900));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn relay_provider_allows_concurrent_requests_under_limit() {
+        use std::sync::{Arc, Mutex};
+        use std::time::Instant;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let arrivals = Arc::new(Mutex::new(Vec::new()));
+        let server_arrivals = Arc::clone(&arrivals);
+        let handle = thread::spawn(move || {
+            let mut handlers = Vec::new();
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                server_arrivals.lock().unwrap().push(Instant::now());
+                handlers.push(thread::spawn(move || {
+                    let mut request = [0_u8; 4096];
+                    let _ = stream.read(&mut request).unwrap();
+                    let body = r#"{"id":"chatcmpl_concurrent","object":"chat.completion","created":1,"model":"glm-5.2","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    stream.write_all(response.as_bytes()).unwrap();
+                }));
+            }
+            for handler in handlers {
+                handler.join().unwrap();
+            }
+        });
+
+        let (paths, root) = paths("provider-concurrent-under-limit");
+        upsert_relay_provider(
+            &paths,
+            RelayProviderDraftPayload {
+                id: Some("dashscope".into()),
+                name: "DashScope".into(),
+                base_url: format!("http://{addr}/v1"),
+                api_key: Some("dashscope-key".into()),
+                model: "glm-5.2".into(),
+                wire_api: "responses".into(),
+            },
+        )
+        .unwrap();
+        activate_relay_provider(&paths, "dashscope").unwrap();
+
+        let body = r#"{"model":"glm-5.2","input":"hello"}"#;
+        let request = format!(
+            "POST /v1/responses HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let first = relay_http_response_for_request(&paths, request.as_bytes());
+        let second = relay_http_response_for_request(&paths, request.as_bytes());
+        let (first, second) = tokio::join!(first, second);
+
+        assert_eq!(first.unwrap().status_code, 200);
+        assert_eq!(second.unwrap().status_code, 200);
+        handle.join().unwrap();
+        let arrivals = arrivals.lock().unwrap();
+        assert_eq!(arrivals.len(), 2);
+        // With concurrency=20, two requests can be in-flight simultaneously.
+        // Rate slot still spaces request starts by ~1s, but both arrive
+        // well under the ~3s it would take if serialized end-to-end.
+        assert!(arrivals[1].duration_since(arrivals[0]) < Duration::from_secs(2));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn relay_provider_retries_429_respecting_retry_after_header() {
+        use std::time::Instant;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = thread::spawn(move || {
+            for attempt in 0..3 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0_u8; 4096];
+                let read = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..read]);
+                assert!(request.starts_with("POST /v1/chat/completions "));
+                if attempt < 2 {
+                    let body = r#"{"error":{"message":"rate limited","type":"rate_limit"}}"#;
+                    // Retry-After: 1 means the relay should wait ~1s, not the default exponential delay
+                    let response = format!(
+                        "HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nRetry-After: 1\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    stream.write_all(response.as_bytes()).unwrap();
+                } else {
+                    let body = r#"{"id":"chatcmpl_retry_after","object":"chat.completion","created":1,"model":"glm-5.2","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    stream.write_all(response.as_bytes()).unwrap();
+                }
+            }
+        });
+
+        let (paths, root) = paths("provider-retry-after");
+        upsert_relay_provider(
+            &paths,
+            RelayProviderDraftPayload {
+                id: Some("dashscope".into()),
+                name: "DashScope".into(),
+                base_url: format!("http://{addr}/v1"),
+                api_key: Some("dashscope-key".into()),
+                model: "glm-5.2".into(),
+                wire_api: "responses".into(),
+            },
+        )
+        .unwrap();
+        activate_relay_provider(&paths, "dashscope").unwrap();
+
+        let body = r#"{"model":"glm-5.2","input":"hello"}"#;
+        let request = format!(
+            "POST /v1/responses HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let start = Instant::now();
+        let response = relay_http_response_for_request(&paths, request.as_bytes())
+            .await
+            .unwrap();
+        let elapsed = start.elapsed();
+        let body: Value = serde_json::from_slice(&response.body).unwrap();
+
+        assert_eq!(response.status_code, 200);
+        assert_eq!(body["output"][0]["content"][0]["text"], "OK");
+        // Two retries with Retry-After: 1 each => at least ~2s total wait
+        assert!(elapsed >= Duration::from_secs(2));
+        handle.join().unwrap();
         let _ = fs::remove_dir_all(root);
     }
 
