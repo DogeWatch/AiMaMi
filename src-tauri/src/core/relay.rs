@@ -1026,8 +1026,27 @@ fn responses_to_chat_request_body(payload: &Value) -> Result<Value, CoreError> {
         {
             object.insert("max_tokens".to_string(), value.clone());
         }
+        apply_reasoning_effort_for_glm(object, payload.get("reasoning_effort"));
     }
     Ok(body)
+}
+
+fn apply_reasoning_effort_for_glm(body: &mut serde_json::Map<String, Value>, effort: Option<&Value>) {
+    let Some(effort) = effort.and_then(Value::as_str) else {
+        return;
+    };
+    match effort {
+        "xhigh" | "high" => {
+            body.insert("reasoning_effort".to_string(), Value::String("high".into()));
+        }
+        "medium" => {
+            body.insert("reasoning_effort".to_string(), Value::String("low".into()));
+        }
+        "low" => {
+            body.insert("enable_thinking".to_string(), Value::Bool(false));
+        }
+        _ => {}
+    }
 }
 
 fn append_responses_input_as_chat_messages(input: Option<&Value>, messages: &mut Vec<Value>) {
@@ -2638,7 +2657,8 @@ fn catalog_model(slug: &str, display_name: &str, description: &str, priority: i6
         "supported_reasoning_levels": [
             { "effort": "low", "description": "Fast responses with lighter reasoning" },
             { "effort": "medium", "description": "Balances speed and reasoning depth" },
-            { "effort": "high", "description": "Greater reasoning depth" }
+            { "effort": "high", "description": "Greater reasoning depth" },
+            { "effort": "xhigh", "description": "Extra high reasoning depth for complex problems" }
         ],
         "shell_type": "shell_command",
         "visibility": "list",
@@ -3826,6 +3846,43 @@ wire_api = "responses"
         assert_eq!(messages[0]["role"], "tool");
         assert_eq!(messages[0]["tool_call_id"], "call_1");
         assert_eq!(messages[0]["content"], "done");
+    }
+
+    #[test]
+    fn responses_to_chat_request_maps_reasoning_effort_for_glm() {
+        let payload_high = serde_json::json!({
+            "model": "glm-5.2",
+            "input": "hi",
+            "reasoning_effort": "high"
+        });
+        let chat = responses_to_chat_request_body(&payload_high).unwrap();
+        assert_eq!(chat["reasoning_effort"], "high");
+
+        let payload_xhigh = serde_json::json!({
+            "model": "glm-5.2",
+            "input": "hi",
+            "reasoning_effort": "xhigh"
+        });
+        let chat = responses_to_chat_request_body(&payload_xhigh).unwrap();
+        assert_eq!(chat["reasoning_effort"], "high");
+
+        let payload_medium = serde_json::json!({
+            "model": "glm-5.2",
+            "input": "hi",
+            "reasoning_effort": "medium"
+        });
+        let chat = responses_to_chat_request_body(&payload_medium).unwrap();
+        assert_eq!(chat["reasoning_effort"], "low");
+        assert!(chat.get("enable_thinking").is_none());
+
+        let payload_low = serde_json::json!({
+            "model": "glm-5.2",
+            "input": "hi",
+            "reasoning_effort": "low"
+        });
+        let chat = responses_to_chat_request_body(&payload_low).unwrap();
+        assert_eq!(chat["enable_thinking"], false);
+        assert!(chat.get("reasoning_effort").is_none());
     }
 
     #[test]
