@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/app-icon-composed.png" alt="CodexMaMi" width="128" height="128" />
-</p>
-
 <h1 align="center">CodexMaMi</h1>
 
 <p align="center">
@@ -38,13 +34,6 @@ CodexMaMi is built with **Tauri 2, React, and Rust**. It consolidates these high
 | **Settings & runtime** | Theme, language, quota refresh, API proxy, update checks; tray and macOS notch quota display |
 
 **Smart router note:** Relay models are forwarded through CodexMaMi's local proxy. Keep CodexMaMi running while Codex uses relay models.
-
-<p align="center">
-  <img src="assets/console.png" alt="CodexMaMi" width="1200" height="812" />
-</p>
-<p align="center">
-  <img src="assets/mami.png" alt="CodexMaMi community QR code" width="400" height="300" />
-</p>
 
 ---
 
