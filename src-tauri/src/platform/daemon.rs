@@ -2,7 +2,7 @@ use crate::core::models::{AutoSwitchRuntimeState, CoreError};
 use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "macos")]
-const MACOS_DAEMON_LABEL: &str = "dev.aimami.auto-switch";
+const MACOS_DAEMON_LABEL: &str = "dev.codexmami.auto-switch";
 #[cfg(target_os = "macos")]
 const LEGACY_MACOS_DAEMON_LABEL: &str = "dev.aimami.legacy-auto-switch";
 #[cfg(target_os = "macos")]

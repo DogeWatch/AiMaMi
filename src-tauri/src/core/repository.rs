@@ -486,7 +486,7 @@ impl Repository {
                 warnings.push(CoreWarning {
                     code: "CURRENT_AUTH_SYNC_FAILED".into(),
                     message: format!(
-                        "Failed to sync current auth.json into the AiMaMi registry: {error}"
+                        "Failed to sync current auth.json into the CodexMaMi registry: {error}"
                     ),
                 });
             }
@@ -746,7 +746,7 @@ impl Repository {
             service_state: service_state.unwrap_or_else(|| {
                 crate::platform::daemon::check_daemon_state(&self.paths.launch_agent_path)
             }),
-            service_label: "dev.aimami.auto-switch".into(),
+            service_label: "dev.codexmami.auto-switch".into(),
         }
     }
 

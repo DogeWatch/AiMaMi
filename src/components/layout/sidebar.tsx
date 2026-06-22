@@ -146,7 +146,7 @@ export function AppSidebar({
         >
           <img
             src={SIDEBAR_LOGO_SRC}
-            alt="AiMaMi"
+            alt="CodexMaMi"
             className="h-[35px] w-[35px] select-none rounded-full object-cover md:translate-x-1"
             draggable={false}
           />
@@ -160,7 +160,7 @@ export function AppSidebar({
           <div className="relative h-[35px] w-[35px] shrink-0">
             <img
               src={SIDEBAR_LOGO_SRC}
-              alt="AiMaMi"
+              alt="CodexMaMi"
               className="h-full w-full select-none rounded-full object-cover"
               draggable={false}
             />
@@ -171,7 +171,7 @@ export function AppSidebar({
           </div>
           <div className="flex min-w-0 flex-col leading-tight">
             <span className="truncate text-[15px] font-semibold text-sidebar-foreground">
-              AiMaMi
+              CodexMaMi
             </span>
             <span className="truncate text-[11px] text-sidebar-foreground/60">
               Codex Assistant

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/app-icon-composed.png" alt="AiMaMi" width="128" height="128" />
+  <img src="assets/app-icon-composed.png" alt="CodexMaMi" width="128" height="128" />
 </p>
 
-<h1 align="center">AiMaMi</h1>
+<h1 align="center">CodexMaMi</h1>
 
 <p align="center">
   <strong>A native desktop companion for OpenAI Codex — manage accounts, routing, sessions, and local configuration in one place.</strong>
@@ -18,7 +18,7 @@
 
 Codex stores accounts, sessions, MCP entries, Skills, smart-router settings, and relay configuration across multiple files under `~/.codex`. Multi-account switching, quota exhaustion, third-party model setup, session cleanup, and config drift quickly turn day-to-day work into hand-editing TOML, JSON, and SQLite.
 
-AiMaMi is built with **Tauri 2, React, and Rust**. It consolidates these high-frequency workflows — including smart routing and relay management — into a single desktop app that reads and writes Codex data locally, reducing the risk of manual file edits.
+CodexMaMi is built with **Tauri 2, React, and Rust**. It consolidates these high-frequency workflows — including smart routing and relay management — into a single desktop app that reads and writes Codex data locally, reducing the risk of manual file edits.
 
 ---
 
@@ -33,17 +33,17 @@ AiMaMi is built with **Tauri 2, React, and Rust**. It consolidates these high-fr
 | **Session management** | Safely inspect, analyze, and bulk-clean local threads from the real index |
 | **MCP / Skills** | Manage MCP entries and Skills lifecycle in the UI, with backup and restore |
 | **Plugins** | Unified toggles for built-in extensions (e.g. web tools, image support) |
-| **Custom instructions** | Manage only the AiMaMi-managed block in `~/.codex/AGENTS.md`, with preview and rollback |
+| **Custom instructions** | Manage only the CodexMaMi-managed block in `~/.codex/AGENTS.md`, with preview and rollback |
 | **System maintenance** | Diagnose, clean, rebuild registry, force-quit Codex, fix common config issues |
 | **Settings & runtime** | Theme, language, quota refresh, API proxy, update checks; tray and macOS notch quota display |
 
-**Smart router note:** Relay models are forwarded through AiMaMi's local proxy. Keep AiMaMi running while Codex uses relay models.
+**Smart router note:** Relay models are forwarded through CodexMaMi's local proxy. Keep CodexMaMi running while Codex uses relay models.
 
 <p align="center">
-  <img src="assets/console.png" alt="AiMaMi" width="1200" height="812" />
+  <img src="assets/console.png" alt="CodexMaMi" width="1200" height="812" />
 </p>
 <p align="center">
-  <img src="assets/mami.png" alt="AiMaMi community QR code" width="400" height="300" />
+  <img src="assets/mami.png" alt="CodexMaMi community QR code" width="400" height="300" />
 </p>
 
 ---
@@ -69,8 +69,8 @@ Tauri 2 · React 18 · TypeScript · Vite 6 · Tailwind CSS · shadcn/ui · Rust
 **Requirements:** Node.js · pnpm · Rust · [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
 
 ```bash
-git clone https://github.com/borawong/AiMaMi.git
-cd AiMaMi
+git clone https://github.com/DogeWatch/CodexMaMi.git
+cd CodexMaMi
 pnpm install
 pnpm tauri dev
 ```
@@ -100,7 +100,7 @@ assets/        Branding and documentation assets
 ```text
 React UI ── invoke() ──▶ Tauri commands ──▶ core/
                                               ├── ~/.codex          (Codex native)
-                                              └── ~/.codex/codexmate/ (AiMaMi app data)
+                                              └── ~/.codex/codexmate/ (CodexMaMi app data)
                          platform/            macOS / Windows implementations
 ```
 
@@ -120,4 +120,4 @@ Issues and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING
 
 ## Disclaimer
 
-AiMaMi is an independent tool for local Codex workflows. It is not affiliated with, endorsed by, or sponsored by OpenAI. Use third-party relay services at your own risk and comply with their terms of service.
+CodexMaMi is an independent tool for local Codex workflows. It is not affiliated with, endorsed by, or sponsored by OpenAI. Use third-party relay services at your own risk and comply with their terms of service.

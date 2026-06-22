@@ -30,10 +30,10 @@ pub fn run() {
     let single_instance_guard = match platform::single_instance::acquire(&shared_paths) {
         Ok(guard) => guard,
         Err(error) => {
-            eprintln!("[AiMaMi] another instance is already running; exiting: {error}");
+            eprintln!("[CodexMaMi] another instance is already running; exiting: {error}");
             let activated = platform::single_instance::request_existing_instance_activation();
             if !activated {
-                eprintln!("[AiMaMi] failed to activate the running instance");
+                eprintln!("[CodexMaMi] failed to activate the running instance");
             }
             return;
         }
@@ -66,20 +66,20 @@ pub fn run() {
                 .unwrap_or(false);
             match core::sessions::auto_sync_session_provider_buckets_to_active(&shared_paths) {
                 Ok(Some(ledger)) => eprintln!(
-                    "[AiMaMi] session provider auto-sync: target={}, files={}, state_threads={}",
+                    "[CodexMaMi] session provider auto-sync: target={}, files={}, state_threads={}",
                     ledger.target_model_provider,
                     ledger.files.len(),
                     ledger.state_threads.len()
                 ),
                 Ok(None) => {}
-                Err(error) => eprintln!("[AiMaMi] session provider auto-sync failed: {error}"),
+                Err(error) => eprintln!("[CodexMaMi] session provider auto-sync failed: {error}"),
             }
             core::relay::spawn_relay_proxy_server(shared_paths.clone());
-            eprintln!("[AiMaMi] startup: hotspot_enabled={hotspot_enabled}");
+            eprintln!("[CodexMaMi] startup: hotspot_enabled={hotspot_enabled}");
             commands::hotspot::register_hotspot_relayout_observers(app.handle());
             if hotspot_enabled && platform::screen::has_notch_screen() {
                 if let Err(e) = commands::hotspot::create_hotspot_window(app.handle()) {
-                    eprintln!("[AiMaMi] failed to create hotspot window at startup: {e}");
+                    eprintln!("[CodexMaMi] failed to create hotspot window at startup: {e}");
                 }
             }
 
@@ -91,7 +91,7 @@ pub fn run() {
             TrayIconBuilder::with_id("main")
                 .icon(tray_icon)
                 .icon_as_template(true)
-                .tooltip("AiMaMi")
+                .tooltip("CodexMaMi")
                 .menu(&tray_menu)
                 .on_menu_event(|app, event| {
                     commands::tray_menu::handle_tray_menu_event(app, &event.id.0);
@@ -155,7 +155,7 @@ pub fn run() {
             commands::hotspot::hotspot_ready,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building AiMaMi");
+        .expect("error while building CodexMaMi");
 
     let activation_watcher_guard = platform::single_instance::start_activation_watcher({
         let handle = app.handle().clone();
@@ -163,7 +163,7 @@ pub fn run() {
     })
     .map_err(|error| {
         eprintln!(
-            "[AiMaMi] failed to start single-instance activation watcher: {error}"
+            "[CodexMaMi] failed to start single-instance activation watcher: {error}"
         );
         error
     })

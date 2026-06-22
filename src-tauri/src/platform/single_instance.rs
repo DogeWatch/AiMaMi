@@ -1,7 +1,7 @@
 //! Cross-platform process-level single instance guard.
 //!
 //! This guard is intentionally acquired before Tauri setup starts so a second
-//! AiMaMi process cannot rewrite Codex config.
+//! CodexMaMi process cannot rewrite Codex config.
 
 use crate::platform::paths::CodexPaths;
 use std::io::Write;
@@ -60,7 +60,7 @@ mod imp {
         // Local\\ is per interactive user session and avoids the extra
         // privilege requirements that Global\\ can trigger on locked-down
         // Windows machines.
-        let name: Vec<u16> = std::ffi::OsStr::new("Local\\dev.aimami.desktop.single-instance")
+        let name: Vec<u16> = std::ffi::OsStr::new("Local\\dev.codexmami.desktop.single-instance")
             .encode_wide()
             .chain(std::iter::once(0))
             .collect();
@@ -75,7 +75,7 @@ mod imp {
             unsafe {
                 let _ = CloseHandle(handle);
             }
-            return Err("AiMaMi is already running".into());
+            return Err("CodexMaMi is already running".into());
         }
         Ok(SingleInstanceGuard { handle })
     }
@@ -101,10 +101,10 @@ mod imp {
     pub fn acquire() -> Result<SingleInstanceGuard, String> {
         let dir = dirs::data_local_dir()
             .unwrap_or_else(std::env::temp_dir)
-            .join("dev.aimami.desktop");
+            .join("dev.codexmami.desktop");
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("prepare single-instance lock dir failed: {e}"))?;
-        let path = dir.join("aimami-single-instance.lock");
+        let path = dir.join("codexmami-single-instance.lock");
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -114,7 +114,7 @@ mod imp {
             .map_err(|e| format!("open single-instance lock failed ({}): {e}", path.display()))?;
         let rc = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) };
         if rc != 0 {
-            return Err("AiMaMi is already running".into());
+            return Err("CodexMaMi is already running".into());
         }
         let _ = file.set_len(0);
         let _ = writeln!(file, "pid={}", std::process::id());
@@ -169,8 +169,8 @@ pub fn request_existing_instance_activation() -> bool {
 fn activation_request_path() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("dev.aimami.desktop")
-        .join("aimami-activate.request")
+        .join("dev.codexmami.desktop")
+        .join("codexmami-activate.request")
 }
 
 fn prepare_activation_dir(path: &Path) -> Result<(), String> {

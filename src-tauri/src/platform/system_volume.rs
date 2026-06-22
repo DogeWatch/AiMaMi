@@ -105,7 +105,7 @@ fn volume_worker() -> &'static mpsc::Sender<VolumeOperation> {
     VOLUME_WORKER.get_or_init(|| {
         let (tx, rx) = mpsc::channel::<VolumeOperation>();
         let _ = std::thread::Builder::new()
-            .name("aimami-system-volume".to_string())
+            .name("codexmami-system-volume".to_string())
             .spawn(move || {
                 while let Ok(op) = rx.recv() {
                     match op {

@@ -16,13 +16,23 @@ const RELAY_REGISTRY_FILE: &str = "relay-providers.json";
 const RELAY_CONFIG_BACKUP_FILE: &str = "relay-config-backup.json";
 const RELAY_ROUTER_PROVIDER_ID: &str = "custom";
 const RELAY_ROUTER_BASE_URL: &str = "http://127.0.0.1:49735/v1";
-const RELAY_MANAGED_BLOCK_BEGIN: &str = "# --- AiMaMi Relay Managed Block ---";
-const RELAY_MANAGED_BLOCK_END: &str = "# --- End AiMaMi Relay Managed Block ---";
-const RELAY_TOP_MANAGED_BLOCK_BEGIN: &str = "# --- AiMaMi Relay Managed Block (top) ---";
-const RELAY_TOP_MANAGED_BLOCK_END: &str = "# --- End AiMaMi Relay Managed Block (top) ---";
+const RELAY_MANAGED_BLOCK_BEGIN: &str = "# --- CodexMaMi Relay Managed Block ---";
+const RELAY_MANAGED_BLOCK_END: &str = "# --- End CodexMaMi Relay Managed Block ---";
+const RELAY_TOP_MANAGED_BLOCK_BEGIN: &str = "# --- CodexMaMi Relay Managed Block (top) ---";
+const RELAY_TOP_MANAGED_BLOCK_END: &str = "# --- End CodexMaMi Relay Managed Block (top) ---";
 const RELAY_PROVIDER_MANAGED_BLOCK_BEGIN: &str =
-    "# --- AiMaMi Relay Managed Block (providers) ---";
+    "# --- CodexMaMi Relay Managed Block (providers) ---";
 const RELAY_PROVIDER_MANAGED_BLOCK_END: &str =
+    "# --- End CodexMaMi Relay Managed Block (providers) ---";
+const LEGACY_RELAY_MANAGED_BLOCK_BEGIN: &str = "# --- AiMaMi Relay Managed Block ---";
+const LEGACY_RELAY_MANAGED_BLOCK_END: &str = "# --- End AiMaMi Relay Managed Block ---";
+const LEGACY_RELAY_TOP_MANAGED_BLOCK_BEGIN: &str =
+    "# --- AiMaMi Relay Managed Block (top) ---";
+const LEGACY_RELAY_TOP_MANAGED_BLOCK_END: &str =
+    "# --- End AiMaMi Relay Managed Block (top) ---";
+const LEGACY_RELAY_PROVIDER_MANAGED_BLOCK_BEGIN: &str =
+    "# --- AiMaMi Relay Managed Block (providers) ---";
+const LEGACY_RELAY_PROVIDER_MANAGED_BLOCK_END: &str =
     "# --- End AiMaMi Relay Managed Block (providers) ---";
 const PROVIDER_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 const PROVIDER_RETRY_DELAYS: [Duration; 3] = [
@@ -232,7 +242,7 @@ pub fn upsert_relay_provider(
     }
     if record.wire_api != "responses" {
         return Err(CoreError::InvalidData(
-            "AiMaMi relay currently supports only the OpenAI Responses wire API.".to_string(),
+            "CodexMaMi relay currently supports only the OpenAI Responses wire API.".to_string(),
         ));
     }
 
@@ -266,12 +276,12 @@ pub fn activate_relay_provider(
         .ok_or_else(|| CoreError::NotFound(format!("Relay provider not found: {provider_id}")))?;
     if normalize_wire_api(&provider.wire_api) != "responses" {
         return Err(CoreError::InvalidData(
-            "AiMaMi relay currently supports only the OpenAI Responses wire API.".to_string(),
+            "CodexMaMi relay currently supports only the OpenAI Responses wire API.".to_string(),
         ));
     }
     write_codex_config(paths, &provider)?;
     if let Err(error) = crate::core::sessions::auto_sync_session_provider_buckets_to_active(paths) {
-        eprintln!("[AiMaMi] session provider auto-sync failed after provider activation: {error}");
+        eprintln!("[CodexMaMi] session provider auto-sync failed after provider activation: {error}");
     }
     registry.active_provider_id = Some(provider.id);
     save_registry(paths, &registry)?;
@@ -288,7 +298,7 @@ pub fn delete_relay_provider(
         registry.active_provider_id = None;
         remove_codex_config(paths)?;
         if let Err(error) = crate::core::sessions::auto_sync_session_provider_buckets_to_active(paths) {
-            eprintln!("[AiMaMi] session provider auto-sync failed after provider removal: {error}");
+            eprintln!("[CodexMaMi] session provider auto-sync failed after provider removal: {error}");
         }
     }
     save_registry(paths, &registry)?;
@@ -298,7 +308,7 @@ pub fn delete_relay_provider(
 pub fn test_relay_draft(draft: RelayProviderDraftPayload) -> Result<RelayTestPayload, CoreError> {
     if normalize_wire_api(&draft.wire_api) != "responses" {
         return Err(CoreError::InvalidData(
-            "AiMaMi relay currently supports only the OpenAI Responses wire API.".to_string(),
+            "CodexMaMi relay currently supports only the OpenAI Responses wire API.".to_string(),
         ));
     }
     test_responses_draft(draft)
@@ -320,14 +330,14 @@ fn spawn_relay_proxy_server_at(
         {
             Ok(runtime) => runtime,
             Err(error) => {
-                eprintln!("[AiMaMi] failed to start relay runtime: {error}");
+                eprintln!("[CodexMaMi] failed to start relay runtime: {error}");
                 return;
             }
         };
 
         runtime.block_on(async move {
             if let Err(error) = run_relay_proxy_server(paths, listen_addr).await {
-                eprintln!("[AiMaMi] relay proxy stopped on {listen_addr}: {error}");
+                eprintln!("[CodexMaMi] relay proxy stopped on {listen_addr}: {error}");
             }
         });
     })
@@ -488,7 +498,7 @@ async fn relay_http_response_for_request(
             404,
             serde_json::json!({
                 "error": {
-                    "message": "AiMaMi relay route not found",
+                    "message": "CodexMaMi relay route not found",
                     "type": "not_found"
                 }
             }),
@@ -552,7 +562,7 @@ fn relay_health_response(paths: &CodexPaths) -> RelayHttpResponse {
     json_response(
         200,
         serde_json::json!({
-            "service": "aimami-relay",
+            "service": "codexmami-relay",
             "ok": true,
             "codexHome": paths.codex_home.display().to_string()
         }),
@@ -720,7 +730,7 @@ async fn forward_openai_responses_request(
             401,
             serde_json::json!({
                 "error": {
-                    "message": "Codex did not send OpenAI authorization to AiMaMi relay.",
+                    "message": "Codex did not send OpenAI authorization to CodexMaMi relay.",
                     "type": "missing_openai_auth"
                 }
             }),
@@ -828,7 +838,7 @@ async fn write_relay_responses_stream(
                         401,
                         serde_json::json!({
                             "error": {
-                                "message": "Codex did not send OpenAI authorization to AiMaMi relay.",
+                                "message": "Codex did not send OpenAI authorization to CodexMaMi relay.",
                                 "type": "missing_openai_auth"
                             }
                         }),
@@ -1419,7 +1429,7 @@ impl ChatToResponsesSseAdapter {
     fn new(model: &str) -> Self {
         Self {
             pending: Vec::new(),
-            response_id: "resp_aimami_chat".to_string(),
+            response_id: "resp_codexmami_chat".to_string(),
             model: model.to_string(),
             created_at: current_unix_timestamp(),
             text: String::new(),
@@ -2015,7 +2025,7 @@ fn chat_response_id(value: &Value) -> String {
         .get("id")
         .and_then(Value::as_str)
         .map(response_id_from_chat_id)
-        .unwrap_or_else(|| "resp_aimami_chat".to_string())
+        .unwrap_or_else(|| "resp_codexmami_chat".to_string())
 }
 
 fn response_id_from_chat_id(id: &str) -> String {
@@ -2443,7 +2453,7 @@ fn relay_server_reachable_at(paths: &CodexPaths, addr: SocketAddr, timeout: Dura
         return false;
     };
     let expected_codex_home = paths.codex_home.display().to_string();
-    value.get("service").and_then(Value::as_str) == Some("aimami-relay")
+    value.get("service").and_then(Value::as_str) == Some("codexmami-relay")
         && value.get("ok").and_then(Value::as_bool) == Some(true)
         && value.get("codexHome").and_then(Value::as_str) == Some(expected_codex_home.as_str())
 }
@@ -2555,7 +2565,7 @@ fn append_relay_managed_block(
     let mut provider_block = Vec::new();
     provider_block.push(RELAY_PROVIDER_MANAGED_BLOCK_BEGIN.to_string());
     provider_block.push(format!("[model_providers.{RELAY_ROUTER_PROVIDER_ID}]"));
-    provider_block.push("name = \"AiMaMi Relay\"".to_string());
+    provider_block.push("name = \"CodexMaMi Relay\"".to_string());
     provider_block.push(format!("base_url = {}", quote_toml(RELAY_ROUTER_BASE_URL)));
     provider_block.push("requires_openai_auth = true".to_string());
     provider_block.push("supports_websockets = false".to_string());
@@ -2780,6 +2790,9 @@ fn strip_relay_managed_block(content: &str) -> String {
         if trimmed == RELAY_MANAGED_BLOCK_BEGIN
             || trimmed == RELAY_TOP_MANAGED_BLOCK_BEGIN
             || trimmed == RELAY_PROVIDER_MANAGED_BLOCK_BEGIN
+            || trimmed == LEGACY_RELAY_MANAGED_BLOCK_BEGIN
+            || trimmed == LEGACY_RELAY_TOP_MANAGED_BLOCK_BEGIN
+            || trimmed == LEGACY_RELAY_PROVIDER_MANAGED_BLOCK_BEGIN
         {
             skipping = true;
             continue;
@@ -2788,6 +2801,9 @@ fn strip_relay_managed_block(content: &str) -> String {
             if trimmed == RELAY_MANAGED_BLOCK_END
                 || trimmed == RELAY_TOP_MANAGED_BLOCK_END
                 || trimmed == RELAY_PROVIDER_MANAGED_BLOCK_END
+                || trimmed == LEGACY_RELAY_MANAGED_BLOCK_END
+                || trimmed == LEGACY_RELAY_TOP_MANAGED_BLOCK_END
+                || trimmed == LEGACY_RELAY_PROVIDER_MANAGED_BLOCK_END
             {
                 skipping = false;
             }
@@ -2810,7 +2826,10 @@ fn has_relay_managed_blocks(content: &str) -> bool {
         content.contains(RELAY_MANAGED_BLOCK_BEGIN) && content.contains(RELAY_MANAGED_BLOCK_END);
     let has_split = content.contains(RELAY_TOP_MANAGED_BLOCK_BEGIN)
         && content.contains(RELAY_TOP_MANAGED_BLOCK_END);
-    has_legacy || has_split
+    let has_legacy_markers = content.contains(LEGACY_RELAY_MANAGED_BLOCK_BEGIN)
+        || content.contains(LEGACY_RELAY_TOP_MANAGED_BLOCK_BEGIN)
+        || content.contains(LEGACY_RELAY_PROVIDER_MANAGED_BLOCK_BEGIN);
+    has_legacy || has_split || has_legacy_markers
 }
 
 fn insert_before_first_table(content: &str, block: &str) -> String {
@@ -3352,7 +3371,7 @@ fn configured_http_proxy_addr(paths: &CodexPaths) -> Result<String, CoreError> {
         .map_err(|error| CoreError::InvalidData(format!("Invalid proxy URL: {error}")))?;
     if parsed.scheme() != "http" {
         return Err(CoreError::InvalidData(
-            "AiMaMi local relay proxy currently requires an http:// upstream proxy".into(),
+            "CodexMaMi local relay proxy currently requires an http:// upstream proxy".into(),
         ));
     }
     let host = parsed
@@ -3413,7 +3432,7 @@ mod tests {
 
     fn paths(label: &str) -> (CodexPaths, PathBuf) {
         let root = std::env::temp_dir().join(format!(
-            "aimami-relay-{label}-{}-{}",
+            "codexmami-relay-{label}-{}-{}",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
@@ -3533,12 +3552,12 @@ mod tests {
 
         let config = fs::read_to_string(&paths.config_path).unwrap();
         assert!(config.contains("[mcp_servers.context7]"));
-        assert!(config.contains("# --- AiMaMi Relay Managed Block (top) ---"));
-        assert!(config.contains("# --- AiMaMi Relay Managed Block (providers) ---"));
+        assert!(config.contains("# --- CodexMaMi Relay Managed Block (top) ---"));
+        assert!(config.contains("# --- CodexMaMi Relay Managed Block (providers) ---"));
         assert!(config.contains("model_provider = \"custom\""));
         assert!(config.contains("model = \"gpt-5.5\""));
         assert!(config.contains("model_catalog_json = \"codex_router_catalog.json\""));
-        assert!(!config.contains("model_provider = \"aimami_dashscope\""));
+        assert!(!config.contains("model_provider = \"codexmami_dashscope\""));
         assert!(config.contains("[model_providers.custom]"));
         assert!(config.contains("base_url = \"http://127.0.0.1:49735/v1\""));
         assert!(config.contains("requires_openai_auth = true"));
@@ -3578,7 +3597,7 @@ mod tests {
         activate_relay_provider(&paths, "dashscope").unwrap();
 
         let config = fs::read_to_string(&paths.config_path).unwrap();
-        assert!(!config.contains("model_provider = \"aimami_dashscope\""));
+        assert!(!config.contains("model_provider = \"codexmami_dashscope\""));
         assert!(!config.contains("model = \"qwen3.7-max\""));
         assert!(config.contains("model_provider = \"custom\""));
         assert!(config.contains("model_catalog_json = \"codex_router_catalog.json\""));
@@ -3587,7 +3606,7 @@ mod tests {
         assert!(config.contains("requires_openai_auth = true"));
         assert!(config.contains("supports_websockets = false"));
         assert!(!config.contains("api_key ="));
-        assert!(!config.contains("[model_providers.aimami_dashscope]"));
+        assert!(!config.contains("[model_providers.codexmami_dashscope]"));
         let parsed: toml::Value = config.parse().unwrap();
         assert_eq!(parsed["model_provider"].as_str(), Some("custom"));
         assert_eq!(
@@ -3611,7 +3630,7 @@ mod tests {
         let (paths, root) = paths("activate-session-bucket");
         fs::create_dir_all(&paths.sessions_dir).unwrap();
         let openai_session = paths.sessions_dir.join("openai.jsonl");
-        let legacy_aimami_session = paths.sessions_dir.join("aimami.jsonl");
+        let legacy_codexmami_session = paths.sessions_dir.join("codexmami.jsonl");
         let legacy_vendor_session = paths.sessions_dir.join("deepseek.jsonl");
         fs::write(
             &openai_session,
@@ -3624,9 +3643,9 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            &legacy_aimami_session,
+            &legacy_codexmami_session,
             concat!(
-                r#"{"type":"session_meta","payload":{"id":"aimami-session","model_provider":"aimami"}}"#,
+                r#"{"type":"session_meta","payload":{"id":"codexmami-session","model_provider":"codexmami"}}"#,
                 "\n"
             ),
         )
@@ -3655,7 +3674,7 @@ mod tests {
         activate_relay_provider(&paths, "dashscope").unwrap();
 
         let openai_raw = fs::read_to_string(openai_session).unwrap();
-        let legacy_raw = fs::read_to_string(legacy_aimami_session).unwrap();
+        let legacy_raw = fs::read_to_string(legacy_codexmami_session).unwrap();
         let vendor_raw = fs::read_to_string(legacy_vendor_session).unwrap();
         assert!(openai_raw.contains(r#""model_provider":"custom""#));
         assert!(legacy_raw.contains(r#""model_provider":"custom""#));
@@ -3672,7 +3691,7 @@ mod tests {
         let ledger_raw = fs::read_to_string(ledgers[0].path()).unwrap();
         assert!(ledger_raw.contains(r#""targetModelProvider": "custom""#));
         assert!(ledger_raw.contains(r#""originalModelProvider": "openai""#));
-        assert!(ledger_raw.contains(r#""originalModelProvider": "aimami""#));
+        assert!(ledger_raw.contains(r#""originalModelProvider": "codexmami""#));
         assert!(ledger_raw.contains(r#""originalModelProvider": "deepseek""#));
         assert!(!backup_dir.exists());
 
@@ -3904,7 +3923,7 @@ wire_api = "responses"
     }
 
     #[test]
-    fn relay_reachable_probe_rejects_non_aimami_service() {
+    fn relay_reachable_probe_rejects_non_codexmami_service() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let handle = thread::spawn(move || {
@@ -3939,7 +3958,7 @@ wire_api = "responses"
             let (mut stream, _) = listener.accept().unwrap();
             let mut request = [0_u8; 1024];
             let _ = stream.read(&mut request).unwrap();
-            let body = r#"{"service":"aimami-relay","ok":true,"codexHome":"/tmp/other-codex"}"#;
+            let body = r#"{"service":"codexmami-relay","ok":true,"codexHome":"/tmp/other-codex"}"#;
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
                 body.len(),
@@ -3958,7 +3977,7 @@ wire_api = "responses"
     }
 
     #[tokio::test]
-    async fn relay_health_endpoint_identifies_aimami_relay() {
+    async fn relay_health_endpoint_identifies_codexmami_relay() {
         let (paths, root) = paths("relay-health");
 
         let response = relay_http_response_for_request(
@@ -3970,7 +3989,7 @@ wire_api = "responses"
 
         assert_eq!(response.status_code, 200);
         let body: Value = serde_json::from_slice(&response.body).unwrap();
-        assert_eq!(body["service"], "aimami-relay");
+        assert_eq!(body["service"], "codexmami-relay");
         assert_eq!(body["ok"], true);
 
         let _ = fs::remove_dir_all(root);
@@ -4270,7 +4289,7 @@ wire_api = "responses"
     }
 
     #[tokio::test]
-    async fn relay_reachable_probe_accepts_current_aimami_relay() {
+    async fn relay_reachable_probe_accepts_current_codexmami_relay() {
         let (paths, root) = paths("relay-health-current-home");
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -5410,7 +5429,7 @@ wire_api = "responses"
     }
 
     #[tokio::test]
-    async fn relay_streaming_provider_requests_bypass_aimami_api_proxy() {
+    async fn relay_streaming_provider_requests_bypass_codexmami_api_proxy() {
         let provider = TcpListener::bind("127.0.0.1:0").unwrap();
         let provider_addr = provider.local_addr().unwrap();
         let provider_handle = thread::spawn(move || {

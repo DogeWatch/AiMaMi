@@ -1038,7 +1038,7 @@ mod tests {
 
     fn paths(label: &str) -> (CodexPaths, PathBuf) {
         let root = std::env::temp_dir().join(format!(
-            "aimami-sessions-{label}-{}-{}",
+            "codexmami-sessions-{label}-{}-{}",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
@@ -1116,22 +1116,22 @@ mod tests {
     #[test]
     fn load_sessions_reports_provider_buckets_and_active_provider() {
         let (paths, root) = paths("provider-buckets");
-        fs::write(&paths.config_path, r#"model_provider = "aimami""#).unwrap();
+        fs::write(&paths.config_path, r#"model_provider = "codexmami""#).unwrap();
         fs::write(
             paths.sessions_dir.join("openai.jsonl"),
             r#"{"type":"session_meta","payload":{"id":"openai-session","model_provider":"openai"}}"#,
         )
         .unwrap();
         fs::write(
-            paths.sessions_dir.join("aimami.jsonl"),
-            r#"{"type":"session_meta","payload":{"id":"aimami-session","model_provider":"aimami"}}"#,
+            paths.sessions_dir.join("codexmami.jsonl"),
+            r#"{"type":"session_meta","payload":{"id":"codexmami-session","model_provider":"codexmami"}}"#,
         )
         .unwrap();
         fs::write(paths.sessions_dir.join("legacy.jsonl"), "{}\n").unwrap();
 
         let payload = load_sessions(&paths).unwrap();
 
-        assert_eq!(payload.active_model_provider, "aimami");
+        assert_eq!(payload.active_model_provider, "codexmami");
         assert!(!payload.state_index_available);
         assert_eq!(
             payload.state_index_error.as_deref(),
@@ -1141,7 +1141,7 @@ mod tests {
             payload.migration_preview,
             SessionProviderMigrationPreviewPayload {
                 source_model_provider: "openai".into(),
-                target_model_provider: "aimami".into(),
+                target_model_provider: "codexmami".into(),
                 file_session_count: 1,
                 state_thread_count: None,
                 required: true,
@@ -1151,7 +1151,7 @@ mod tests {
             payload.provider_buckets,
             vec![
                 SessionProviderBucketPayload {
-                    model_provider: "aimami".into(),
+                    model_provider: "codexmami".into(),
                     count: 1,
                     active: true,
                 },
@@ -1174,29 +1174,29 @@ mod tests {
     #[test]
     fn prepare_provider_migration_writes_ledger_for_openai_file_sessions() {
         let (paths, root) = paths("migration-ledger");
-        fs::write(&paths.config_path, r#"model_provider = "aimami""#).unwrap();
+        fs::write(&paths.config_path, r#"model_provider = "codexmami""#).unwrap();
         fs::write(
             paths.sessions_dir.join("openai.jsonl"),
             r#"{"type":"session_meta","payload":{"id":"openai-session","model_provider":"openai"}}"#,
         )
         .unwrap();
         fs::write(
-            paths.sessions_dir.join("aimami.jsonl"),
-            r#"{"type":"session_meta","payload":{"id":"aimami-session","model_provider":"aimami"}}"#,
+            paths.sessions_dir.join("codexmami.jsonl"),
+            r#"{"type":"session_meta","payload":{"id":"codexmami-session","model_provider":"codexmami"}}"#,
         )
         .unwrap();
 
         let ledger = prepare_session_provider_migration(&paths).unwrap();
 
         assert_eq!(ledger.source_model_provider, "openai");
-        assert_eq!(ledger.target_model_provider, "aimami");
+        assert_eq!(ledger.target_model_provider, "codexmami");
         assert_eq!(ledger.file_sessions.len(), 1);
         assert_eq!(ledger.file_sessions[0].id, "openai-session");
         assert!(ledger.state_threads.is_empty());
         assert!(Path::new(&ledger.path).exists());
         let raw = fs::read_to_string(&ledger.path).unwrap();
         assert!(raw.contains("\"sourceModelProvider\": \"openai\""));
-        assert!(raw.contains("\"targetModelProvider\": \"aimami\""));
+        assert!(raw.contains("\"targetModelProvider\": \"codexmami\""));
         assert!(raw.contains("\"openai-session\""));
 
         let _ = fs::remove_dir_all(root);
@@ -1205,7 +1205,7 @@ mod tests {
     #[test]
     fn prepare_provider_migration_does_not_overwrite_existing_ledger() {
         let (paths, root) = paths("migration-ledger-unique");
-        fs::write(&paths.config_path, r#"model_provider = "aimami""#).unwrap();
+        fs::write(&paths.config_path, r#"model_provider = "codexmami""#).unwrap();
         fs::write(
             paths.sessions_dir.join("openai.jsonl"),
             r#"{"type":"session_meta","payload":{"id":"openai-session","model_provider":"openai"}}"#,
@@ -1308,14 +1308,14 @@ mod tests {
 
     #[test]
     fn parse_state_provider_bucket_rows_marks_active_provider() {
-        let buckets = parse_state_provider_bucket_rows("openai\t2\naimami\t1\n\t3\n", "aimami")
+        let buckets = parse_state_provider_bucket_rows("openai\t2\ncodexmami\t1\n\t3\n", "codexmami")
             .unwrap();
 
         assert_eq!(
             buckets,
             vec![
                 SessionProviderBucketPayload {
-                    model_provider: "aimami".into(),
+                    model_provider: "codexmami".into(),
                     count: 1,
                     active: true,
                 },

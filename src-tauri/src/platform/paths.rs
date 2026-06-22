@@ -103,7 +103,7 @@ impl CodexPaths {
     fn resolve_launch_agent_path() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("Library/LaunchAgents/dev.aimami.auto-switch.plist")
+            .join("Library/LaunchAgents/dev.codexmami.auto-switch.plist")
     }
 
     #[cfg(not(target_os = "macos"))]

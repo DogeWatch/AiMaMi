@@ -8,8 +8,10 @@ use crate::platform::paths::CodexPaths;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-const MANAGED_START_MARKER: &str = "<!-- AIMAMI_CUSTOM_INSTRUCTIONS_START -->";
-const MANAGED_END_MARKER: &str = "<!-- AIMAMI_CUSTOM_INSTRUCTIONS_END -->";
+const MANAGED_START_MARKER: &str = "<!-- CODEXMAMI_CUSTOM_INSTRUCTIONS_START -->";
+const MANAGED_END_MARKER: &str = "<!-- CODEXMAMI_CUSTOM_INSTRUCTIONS_END -->";
+const LEGACY_MANAGED_START_MARKER: &str = "<!-- AIMAMI_CUSTOM_INSTRUCTIONS_START -->";
+const LEGACY_MANAGED_END_MARKER: &str = "<!-- AIMAMI_CUSTOM_INSTRUCTIONS_END -->";
 const HISTORY_LIMIT: usize = 10;
 
 #[derive(Debug, Clone)]
@@ -214,6 +216,46 @@ fn parse_global_file(paths: &CodexPaths) -> Result<ParsedManagedBlock, CoreError
         .map(|(idx, _)| idx)
         .collect();
 
+    // Fall back to legacy markers so existing AGENTS.md files keep working.
+    if start_positions.is_empty() && end_positions.is_empty() {
+        let legacy_start_positions: Vec<usize> = raw_content
+            .match_indices(LEGACY_MANAGED_START_MARKER)
+            .map(|(idx, _)| idx)
+            .collect();
+        let legacy_end_positions: Vec<usize> = raw_content
+            .match_indices(LEGACY_MANAGED_END_MARKER)
+            .map(|(idx, _)| idx)
+            .collect();
+        if !legacy_start_positions.is_empty() || !legacy_end_positions.is_empty() {
+            return parse_with_markers(
+                file_exists,
+                raw_content,
+                legacy_start_positions,
+                legacy_end_positions,
+                LEGACY_MANAGED_START_MARKER,
+                LEGACY_MANAGED_END_MARKER,
+            );
+        }
+    }
+
+    parse_with_markers(
+        file_exists,
+        raw_content,
+        start_positions,
+        end_positions,
+        MANAGED_START_MARKER,
+        MANAGED_END_MARKER,
+    )
+}
+
+fn parse_with_markers(
+    file_exists: bool,
+    raw_content: String,
+    start_positions: Vec<usize>,
+    end_positions: Vec<usize>,
+    start_marker: &str,
+    end_marker: &str,
+) -> Result<ParsedManagedBlock, CoreError> {
     if start_positions.is_empty() && end_positions.is_empty() {
         return Ok(ParsedManagedBlock {
             file_exists,
@@ -232,7 +274,7 @@ fn parse_global_file(paths: &CodexPaths) -> Result<ParsedManagedBlock, CoreError
             file_exists,
             protection_state: CustomInstructionProtectionState::Protected,
             issue_message: Some(
-                "检测到重复或不完整的 AiMaMi 自定义指令标记，请先手动修复全局 AGENTS 文件。"
+                "检测到重复或不完整的 CodexMaMi 自定义指令标记，请先手动修复全局 AGENTS 文件。"
                     .to_string(),
             ),
             managed_block_present: false,
@@ -250,7 +292,7 @@ fn parse_global_file(paths: &CodexPaths) -> Result<ParsedManagedBlock, CoreError
             file_exists,
             protection_state: CustomInstructionProtectionState::Protected,
             issue_message: Some(
-                "AiMaMi 自定义指令标记顺序异常，请先手动修复全局 AGENTS 文件。".to_string(),
+                "CodexMaMi 自定义指令标记顺序异常，请先手动修复全局 AGENTS 文件。".to_string(),
             ),
             managed_block_present: false,
             managed_content: String::new(),
@@ -260,7 +302,7 @@ fn parse_global_file(paths: &CodexPaths) -> Result<ParsedManagedBlock, CoreError
         });
     }
 
-    let content_start = block_start + MANAGED_START_MARKER.len();
+    let content_start = block_start + start_marker.len();
     let content = raw_content[content_start..block_end_marker_start]
         .trim_matches('\n')
         .to_string();
@@ -273,7 +315,7 @@ fn parse_global_file(paths: &CodexPaths) -> Result<ParsedManagedBlock, CoreError
         managed_content: content,
         raw_content,
         block_start: Some(block_start),
-        block_end: Some(block_end_marker_start + MANAGED_END_MARKER.len()),
+        block_end: Some(block_end_marker_start + end_marker.len()),
     })
 }
 
@@ -344,7 +386,7 @@ fn normalize_managed_content(content: &str) -> String {
 fn validate_managed_content(content: &str) -> Result<(), CoreError> {
     if content.contains(MANAGED_START_MARKER) || content.contains(MANAGED_END_MARKER) {
         return Err(CoreError::InvalidData(
-            "自定义指令内容不能包含 AiMaMi 受控区块标记。".to_string(),
+            "自定义指令内容不能包含 CodexMaMi 受控区块标记。".to_string(),
         ));
     }
     Ok(())
