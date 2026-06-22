@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 const REGISTRY_SCHEMA_VERSION: i32 = 2;
+const LOCAL_RELAY_PROXY_URL: &str = "http://127.0.0.1:49735";
+const LOCAL_RELAY_NO_PROXY: &str = "localhost,127.0.0.1,::1";
+const LOCAL_RELAY_CHROMIUM_BYPASS: &str = "localhost;127.0.0.1;::1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -393,11 +396,12 @@ impl Repository {
         }
 
         let proxy = crate::core::api_client::sanitize_proxy_config(&self.load_settings().api_proxy)?;
-        let proxy_url = proxy.url.ok_or_else(|| {
+        proxy.url.ok_or_else(|| {
             CoreError::InvalidData(
                 "Manual proxy is required before launching Codex Desktop with proxy".into(),
             )
         })?;
+        let proxy_url = LOCAL_RELAY_PROXY_URL.to_string();
         let env = [
             "HTTP_PROXY",
             "HTTPS_PROXY",
@@ -408,8 +412,15 @@ impl Repository {
         ]
         .into_iter()
         .map(|key| (key.to_string(), proxy_url.clone()))
+        .chain([
+            ("NO_PROXY".to_string(), LOCAL_RELAY_NO_PROXY.to_string()),
+            ("no_proxy".to_string(), LOCAL_RELAY_NO_PROXY.to_string()),
+        ])
         .collect();
-        let args = vec![format!("--proxy-server={proxy_url}")];
+        let args = vec![
+            format!("--proxy-server={proxy_url}"),
+            format!("--proxy-bypass-list={LOCAL_RELAY_CHROMIUM_BYPASS}"),
+        ];
 
         Ok(CodexDesktopLaunchPlan {
             executable_path,
@@ -1256,7 +1267,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_desktop_launch_plan_uses_manual_api_proxy() {
+    fn codex_desktop_launch_plan_routes_codex_through_local_relay() {
         let (repo, codex_home) = make_test_repo("codex-launch-proxy");
         let executable = codex_home.join("Codex");
         fs::write(&executable, "").unwrap();
@@ -1269,17 +1280,29 @@ mod tests {
             .unwrap();
 
         assert_eq!(plan.executable_path, executable);
-        assert_eq!(plan.proxy_url, "http://127.0.0.1:7897");
-        assert_eq!(plan.args, vec!["--proxy-server=http://127.0.0.1:7897"]);
+        assert_eq!(plan.proxy_url, "http://127.0.0.1:49735");
+        assert_eq!(
+            plan.args,
+            vec![
+                "--proxy-server=http://127.0.0.1:49735",
+                "--proxy-bypass-list=localhost;127.0.0.1;::1"
+            ]
+        );
         assert!(plan
             .env
-            .contains(&("HTTP_PROXY".into(), "http://127.0.0.1:7897".into())));
+            .contains(&("HTTP_PROXY".into(), "http://127.0.0.1:49735".into())));
         assert!(plan
             .env
-            .contains(&("HTTPS_PROXY".into(), "http://127.0.0.1:7897".into())));
+            .contains(&("HTTPS_PROXY".into(), "http://127.0.0.1:49735".into())));
         assert!(plan
             .env
-            .contains(&("ALL_PROXY".into(), "http://127.0.0.1:7897".into())));
+            .contains(&("ALL_PROXY".into(), "http://127.0.0.1:49735".into())));
+        assert!(plan
+            .env
+            .contains(&("NO_PROXY".into(), "localhost,127.0.0.1,::1".into())));
+        assert!(plan
+            .env
+            .contains(&("no_proxy".into(), "localhost,127.0.0.1,::1".into())));
 
         let _ = fs::remove_dir_all(codex_home);
     }

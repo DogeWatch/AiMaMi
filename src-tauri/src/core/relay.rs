@@ -358,11 +358,63 @@ async fn serve_relay_connection(
     openai_responses_url: String,
 ) -> Result<(), CoreError> {
     let raw = read_http_request(&mut stream).await?;
+    if let Ok(request) = parse_http_request(&raw) {
+        if is_forward_proxy_request(&request) {
+            return write_forward_proxy_request(&paths, &request, &raw, &mut stream).await;
+        }
+    }
     if let Err(error) =
         write_relay_response_for_request(&paths, &raw, &mut stream, &openai_responses_url).await
     {
         write_http_response(&mut stream, error_response(error)).await?;
     }
+    Ok(())
+}
+
+fn is_forward_proxy_request(request: &RelayHttpRequest) -> bool {
+    request.method == "CONNECT"
+        || request.path.starts_with("http://")
+        || request.path.starts_with("https://")
+}
+
+async fn write_forward_proxy_request(
+    paths: &CodexPaths,
+    request: &RelayHttpRequest,
+    raw_request: &[u8],
+    client: &mut tokio::net::TcpStream,
+) -> Result<(), CoreError> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let proxy_addr = configured_http_proxy_addr(paths)?;
+    let mut upstream = tokio::net::TcpStream::connect(proxy_addr).await?;
+    upstream.write_all(raw_request).await?;
+    upstream.flush().await?;
+
+    if request.method != "CONNECT" {
+        tokio::io::copy(&mut upstream, client).await?;
+        return Ok(());
+    }
+
+    let mut response = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = upstream.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        response.extend_from_slice(&chunk[..read]);
+        if find_header_end(&response).is_some() {
+            break;
+        }
+        if response.len() > 1024 * 1024 {
+            return Err(CoreError::InvalidData(
+                "Upstream proxy CONNECT response headers are too large".to_string(),
+            ));
+        }
+    }
+    client.write_all(&response).await?;
+    client.flush().await?;
+    let _ = tokio::io::copy_bidirectional(client, &mut upstream).await?;
     Ok(())
 }
 
@@ -552,7 +604,7 @@ async fn forward_provider_responses_request(
     endpoint: RelayResponsesEndpoint,
 ) -> Result<RelayHttpResponse, CoreError> {
     let url = responses_url(&provider.base_url, provider_responses_endpoint(endpoint))?;
-    let client = relay_http_client(paths)?;
+    let client = direct_relay_http_client()?;
     let Some(api_key) = provider_api_key(provider) else {
         return Ok(json_response(
             401,
@@ -607,7 +659,7 @@ async fn forward_provider_chat_responses_request(
     let payload: Value = serde_json::from_slice(body)?;
     let chat_body = responses_to_chat_request_body(&payload)?;
     let url = chat_completions_url(&provider.base_url)?;
-    let client = relay_http_client(paths)?;
+    let client = direct_relay_http_client()?;
     let Some(api_key) = provider_api_key(provider) else {
         return Ok(json_response(
             401,
@@ -674,7 +726,7 @@ async fn forward_openai_responses_request(
             }),
         ));
     };
-    let client = relay_http_client(paths)?;
+    let client = proxied_relay_http_client(paths)?;
     let mut request = client
         .post(url)
         .header("content-type", "application/json")
@@ -792,13 +844,13 @@ async fn write_relay_responses_stream(
 }
 
 async fn send_provider_responses_request(
-    paths: &CodexPaths,
+    _paths: &CodexPaths,
     provider: &RelayProviderRecord,
     body: &[u8],
     endpoint: RelayResponsesEndpoint,
 ) -> Result<Option<ProviderHttpResponse>, CoreError> {
     let url = responses_url(&provider.base_url, provider_responses_endpoint(endpoint))?;
-    let client = relay_http_client(paths)?;
+    let client = direct_relay_http_client()?;
     let Some(api_key) = provider_api_key(provider) else {
         return Ok(None);
     };
@@ -825,7 +877,7 @@ async fn write_provider_chat_responses_stream(
     let payload: Value = serde_json::from_slice(body)?;
     let chat_body = responses_to_chat_request_body(&payload)?;
     let url = chat_completions_url(&provider.base_url)?;
-    let client = relay_http_client(paths)?;
+    let client = direct_relay_http_client()?;
     let Some(api_key) = provider_api_key(provider) else {
         write_http_response(
             stream,
@@ -926,7 +978,7 @@ async fn send_openai_responses_request(
     let Some(authorization) = header_value(headers, "authorization") else {
         return Ok(None);
     };
-    let client = relay_http_client(paths)?;
+    let client = proxied_relay_http_client(paths)?;
     let mut request = client
         .post(url)
         .header("content-type", "application/json")
@@ -3191,50 +3243,60 @@ fn request_body_model(body: &[u8]) -> String {
 }
 
 struct SseUsageScanner {
-    buffer: String,
+    pending: Vec<u8>,
+    usage: Option<Value>,
 }
 
 impl SseUsageScanner {
     fn new() -> Self {
         Self {
-            buffer: String::new(),
+            pending: Vec::new(),
+            usage: None,
         }
     }
 
     fn push(&mut self, chunk: &[u8]) {
-        if let Ok(text) = std::str::from_utf8(chunk) {
-            self.buffer.push_str(text);
-            // Keep only last 4KB to find response.completed
-            if self.buffer.len() > 8192 {
-                let start = self.buffer.len() - 4096;
-                self.buffer = self.buffer.split_off(start);
-            }
+        self.pending.extend_from_slice(chunk);
+        while let Some(end) = sse_block_end(&self.pending) {
+            let block = self.pending.drain(..end).collect::<Vec<_>>();
+            self.scan_block(&block);
         }
     }
 
     fn take_usage(&mut self) -> Option<Value> {
-        // Look for response.completed event in the buffer
-        let buffer = std::mem::take(&mut self.buffer);
-        for line in buffer.lines() {
+        if !self.pending.is_empty() {
+            let block = std::mem::take(&mut self.pending);
+            self.scan_block(&block);
+        }
+        self.usage.take()
+    }
+
+    fn scan_block(&mut self, block: &[u8]) {
+        let Ok(text) = std::str::from_utf8(block) else {
+            return;
+        };
+        let mut data_lines = Vec::new();
+        for line in text.lines() {
             let line = line.trim();
             if let Some(data) = line.strip_prefix("data:") {
                 let data = data.trim();
                 if data.is_empty() || data == "[DONE]" {
                     continue;
                 }
-                if let Ok(value) = serde_json::from_str::<Value>(data) {
-                    if value.get("type").and_then(Value::as_str) == Some("response.completed") {
-                        if let Some(usage) = value
-                            .get("response")
-                            .and_then(|r| r.get("usage"))
-                        {
-                            return Some(usage.clone());
-                        }
-                    }
+                data_lines.push(data);
+            }
+        }
+        if data_lines.is_empty() {
+            return;
+        }
+        let data = data_lines.join("\n");
+        if let Ok(value) = serde_json::from_str::<Value>(&data) {
+            if value.get("type").and_then(Value::as_str) == Some("response.completed") {
+                if let Some(usage) = value.get("response").and_then(|r| r.get("usage")) {
+                    self.usage = Some(usage.clone());
                 }
             }
         }
-        None
     }
 }
 
@@ -3263,14 +3325,43 @@ enum ProviderRequestBody {
     Json(Value),
 }
 
-fn relay_http_client(paths: &CodexPaths) -> Result<reqwest::Client, CoreError> {
-    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(120));
+fn direct_relay_http_client() -> Result<reqwest::Client, CoreError> {
+    Ok(reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .no_proxy()
+        .build()?)
+}
+
+fn proxied_relay_http_client(paths: &CodexPaths) -> Result<reqwest::Client, CoreError> {
+    let mut builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(15));
     let proxy_config = load_relay_api_proxy_config(paths);
     let proxy_config = crate::core::api_client::sanitize_proxy_config(&proxy_config)?;
     if let Some(url) = proxy_config.url.as_deref() {
         builder = builder.proxy(reqwest::Proxy::all(url)?);
     }
     Ok(builder.build()?)
+}
+
+fn configured_http_proxy_addr(paths: &CodexPaths) -> Result<String, CoreError> {
+    let proxy_config = load_relay_api_proxy_config(paths);
+    let proxy_config = crate::core::api_client::sanitize_proxy_config(&proxy_config)?;
+    let url = proxy_config.url.ok_or_else(|| {
+        CoreError::InvalidData("Manual proxy is required before forwarding proxy traffic".into())
+    })?;
+    let parsed = reqwest::Url::parse(&url)
+        .map_err(|error| CoreError::InvalidData(format!("Invalid proxy URL: {error}")))?;
+    if parsed.scheme() != "http" {
+        return Err(CoreError::InvalidData(
+            "AiMaMi local relay proxy currently requires an http:// upstream proxy".into(),
+        ));
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| CoreError::InvalidData("Proxy URL host is required".into()))?;
+    let port = parsed
+        .port_or_known_default()
+        .ok_or_else(|| CoreError::InvalidData("Proxy URL port is required".into()))?;
+    Ok(format!("{host}:{port}"))
 }
 
 fn load_relay_api_proxy_config(paths: &CodexPaths) -> ApiProxyConfigPayload {
@@ -3318,6 +3409,7 @@ mod tests {
     use std::net::TcpListener;
     use std::path::PathBuf;
     use std::thread;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     fn paths(label: &str) -> (CodexPaths, PathBuf) {
         let root = std::env::temp_dir().join(format!(
@@ -4143,6 +4235,40 @@ wire_api = "responses"
         );
     }
 
+    #[test]
+    fn sse_usage_scanner_finds_usage_in_large_completed_event() {
+        let completed = serde_json::json!({
+            "type": "response.completed",
+            "response": {
+                "id": "resp_large",
+                "status": "completed",
+                "output": [{
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "x".repeat(12_000)
+                    }]
+                }],
+                "usage": {
+                    "input_tokens": 123,
+                    "output_tokens": 45,
+                    "total_tokens": 168
+                }
+            }
+        });
+        let event = format!("event: response.completed\ndata: {completed}\n\n");
+        let midpoint = event.len() / 2;
+        let mut scanner = SseUsageScanner::new();
+
+        scanner.push(&event.as_bytes()[..midpoint]);
+        scanner.push(&event.as_bytes()[midpoint..]);
+
+        let usage = scanner.take_usage().expect("usage should be found");
+        assert_eq!(usage["input_tokens"], 123);
+        assert_eq!(usage["output_tokens"], 45);
+        assert_eq!(usage["total_tokens"], 168);
+    }
+
     #[tokio::test]
     async fn relay_reachable_probe_accepts_current_aimami_relay() {
         let (paths, root) = paths("relay-health-current-home");
@@ -4442,6 +4568,67 @@ wire_api = "responses"
         assert_eq!(body["output"][0]["content"][0]["text"], "OK");
         handle.join().unwrap();
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn relay_proxy_connect_forwards_through_configured_api_proxy() {
+        let upstream_proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+        let upstream_addr = upstream_proxy.local_addr().unwrap();
+        let upstream_handle = thread::spawn(move || {
+            let (mut stream, _) = upstream_proxy.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let read = stream.read(&mut request).unwrap();
+            let request = String::from_utf8_lossy(&request[..read]);
+            assert!(request.starts_with("CONNECT api.openai.com:443 HTTP/1.1"));
+            stream
+                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                .unwrap();
+            let mut tunneled = [0_u8; 16];
+            let read = stream.read(&mut tunneled).unwrap();
+            assert_eq!(&tunneled[..read], b"ping");
+            stream.write_all(b"pong").unwrap();
+        });
+
+        let (paths, root) = paths("forward-connect");
+        fs::write(
+            &paths.settings_path,
+            format!(
+                r#"{{"apiProxy":{{"mode":"manual","url":"http://{upstream_addr}"}}}}"#
+            ),
+        )
+        .unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let relay_addr = listener.local_addr().unwrap();
+        let paths = Arc::new(paths);
+        let relay_handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            serve_relay_connection(
+                paths,
+                stream,
+                RelayResponsesEndpoint::Responses.openai_url().to_string(),
+            )
+            .await
+            .unwrap();
+        });
+
+        let mut client = tokio::net::TcpStream::connect(relay_addr).await.unwrap();
+        client
+            .write_all(b"CONNECT api.openai.com:443 HTTP/1.1\r\nHost: api.openai.com:443\r\n\r\n")
+            .await
+            .unwrap();
+        let mut response = [0_u8; 128];
+        let read = client.read(&mut response).await.unwrap();
+        assert!(String::from_utf8_lossy(&response[..read])
+            .starts_with("HTTP/1.1 200 Connection Established"));
+        client.write_all(b"ping").await.unwrap();
+        let read = client.read(&mut response).await.unwrap();
+        assert_eq!(&response[..read], b"pong");
+        drop(client);
+
+        relay_handle.await.unwrap();
+        upstream_handle.join().unwrap();
         let _ = fs::remove_dir_all(root);
     }
 
@@ -5223,15 +5410,15 @@ wire_api = "responses"
     }
 
     #[tokio::test]
-    async fn relay_streaming_provider_requests_use_aimami_api_proxy() {
-        let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
-        let proxy_addr = proxy.local_addr().unwrap();
-        let proxy_handle = thread::spawn(move || {
-            let (mut stream, _) = proxy.accept().unwrap();
+    async fn relay_streaming_provider_requests_bypass_aimami_api_proxy() {
+        let provider = TcpListener::bind("127.0.0.1:0").unwrap();
+        let provider_addr = provider.local_addr().unwrap();
+        let provider_handle = thread::spawn(move || {
+            let (mut stream, _) = provider.accept().unwrap();
             let mut request = [0_u8; 4096];
             let read = stream.read(&mut request).unwrap();
             let request = String::from_utf8_lossy(&request[..read]);
-            assert!(request.starts_with("POST http://provider.invalid/v1/chat/completions "));
+            assert!(request.starts_with("POST /v1/chat/completions "));
             assert!(request
                 .to_ascii_lowercase()
                 .contains("authorization: bearer dashscope-key"));
@@ -5257,6 +5444,8 @@ wire_api = "responses"
         });
 
         let (paths, root) = paths("proxy-stream");
+        let unused_proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+        let proxy_addr = unused_proxy.local_addr().unwrap();
         fs::write(
             &paths.settings_path,
             format!(
@@ -5269,7 +5458,7 @@ wire_api = "responses"
             RelayProviderDraftPayload {
                 id: Some("dashscope".into()),
                 name: "DashScope".into(),
-                base_url: "http://provider.invalid/v1".into(),
+                base_url: format!("http://{provider_addr}/v1"),
                 api_key: Some("dashscope-key".into()),
                 model: "qwen3.7-max".into(),
                 wire_api: "responses".into(),
@@ -5311,7 +5500,7 @@ wire_api = "responses"
         assert!(response.contains("response.completed"));
 
         let _ = relay_handle.await;
-        proxy_handle.join().unwrap();
+        provider_handle.join().unwrap();
         let _ = fs::remove_dir_all(root);
     }
 
