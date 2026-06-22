@@ -47,6 +47,9 @@ const SessionsPage = lazy(() =>
 const ProvidersPage = lazy(() =>
   import("@/components/providers/providers-page").then((module) => ({ default: module.ProvidersPage })),
 );
+const TokenStatsPage = lazy(() =>
+  import("@/components/token-stats/token-stats-page").then((module) => ({ default: module.TokenStatsPage })),
+);
 
 const DRAG_REGION_HEIGHT = isMacPlatform() ? 48 : 0;
 const queryClient = createAppQueryClient();
@@ -88,6 +91,7 @@ function MainApp() {
         import("@/components/overview/overview-page"),
         import("@/components/sessions/sessions-page"),
         import("@/components/providers/providers-page"),
+        import("@/components/token-stats/token-stats-page"),
       ]);
     }
   }, [prewarmRoutes]);
@@ -108,6 +112,8 @@ function MainApp() {
         return <CustomInstructionsPage />;
       case "maintenance":
         return <MaintenancePage />;
+      case "tokenStats":
+        return <TokenStatsPage />;
       case "settings":
         return (
           <SettingsPage
