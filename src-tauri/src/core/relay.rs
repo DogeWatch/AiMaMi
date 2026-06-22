@@ -758,7 +758,7 @@ async fn write_relay_responses_stream(
                 return Ok(());
             }
             };
-        write_upstream_response_stream(stream, &mut upstream.response, normalize_dashscope_sse).await
+        write_upstream_response_stream(paths, &provider.model, &provider.id, stream, &mut upstream.response, normalize_dashscope_sse).await
     } else {
         let mut upstream = match send_openai_responses_request(
             paths,
@@ -786,7 +786,8 @@ async fn write_relay_responses_stream(
                 return Ok(());
             }
         };
-        write_upstream_response_stream(stream, &mut upstream, false).await
+        let model = request_body_model(&request.body);
+        write_upstream_response_stream(paths, &model, "openai", stream, &mut upstream, false).await
     }
 }
 
@@ -940,6 +941,9 @@ async fn send_openai_responses_request(
 }
 
 async fn write_upstream_response_stream(
+    paths: &CodexPaths,
+    model: &str,
+    provider_id: &str,
     stream: &mut tokio::net::TcpStream,
     upstream: &mut reqwest::Response,
     normalize_dashscope_sse: bool,
@@ -962,16 +966,21 @@ async fn write_upstream_response_stream(
         content_type
     );
     stream.write_all(headers.as_bytes()).await?;
+    let mut usage_scanner = SseUsageScanner::new();
     while let Some(chunk) = upstream.chunk().await? {
         let chunk = if let Some(normalizer) = sse_normalizer.as_mut() {
             normalizer.push(chunk.as_ref())
         } else {
             chunk.to_vec()
         };
+        usage_scanner.push(&chunk);
         if !chunk.is_empty() {
             stream.write_all(&chunk).await?;
             stream.flush().await?;
         }
+    }
+    if let Some(usage) = usage_scanner.take_usage() {
+        token_usage::record_token_usage(paths, model, Some(&usage), provider_id);
     }
     if let Some(normalizer) = sse_normalizer.as_mut() {
         let chunk = normalizer.finish();
@@ -3173,6 +3182,60 @@ fn provider_limit_key(provider: &RelayProviderRecord) -> String {
 
 fn body_value(body: &[u8]) -> Option<Value> {
     serde_json::from_slice::<Value>(body).ok()
+}
+
+fn request_body_model(body: &[u8]) -> String {
+    body_value(body)
+        .and_then(|v| v.get("model").and_then(Value::as_str).map(String::from))
+        .unwrap_or_else(|| "gpt-5.5".to_string())
+}
+
+struct SseUsageScanner {
+    buffer: String,
+}
+
+impl SseUsageScanner {
+    fn new() -> Self {
+        Self {
+            buffer: String::new(),
+        }
+    }
+
+    fn push(&mut self, chunk: &[u8]) {
+        if let Ok(text) = std::str::from_utf8(chunk) {
+            self.buffer.push_str(text);
+            // Keep only last 4KB to find response.completed
+            if self.buffer.len() > 8192 {
+                let start = self.buffer.len() - 4096;
+                self.buffer = self.buffer.split_off(start);
+            }
+        }
+    }
+
+    fn take_usage(&mut self) -> Option<Value> {
+        // Look for response.completed event in the buffer
+        let buffer = std::mem::take(&mut self.buffer);
+        for line in buffer.lines() {
+            let line = line.trim();
+            if let Some(data) = line.strip_prefix("data:") {
+                let data = data.trim();
+                if data.is_empty() || data == "[DONE]" {
+                    continue;
+                }
+                if let Ok(value) = serde_json::from_str::<Value>(data) {
+                    if value.get("type").and_then(Value::as_str) == Some("response.completed") {
+                        if let Some(usage) = value
+                            .get("response")
+                            .and_then(|r| r.get("usage"))
+                        {
+                            return Some(usage.clone());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
