@@ -896,6 +896,14 @@ async fn write_provider_chat_responses_stream(
         }
     }
     let output = adapter.finish()?;
+    if let Some(usage) = adapter.take_usage() {
+        token_usage::record_token_usage(
+            paths,
+            chat_body.get("model").and_then(Value::as_str).unwrap_or("model"),
+            Some(&usage),
+            &provider.id,
+        );
+    }
     if !output.is_empty() {
         stream.write_all(&output).await?;
         stream.flush().await?;
@@ -1760,6 +1768,10 @@ impl ChatToResponsesSseAdapter {
         }
         items.sort_by_key(|(output_index, _)| *output_index);
         items.into_iter().map(|(_, item)| item).collect()
+    }
+
+    fn take_usage(&mut self) -> Option<Value> {
+        self.usage.take()
     }
 }
 
