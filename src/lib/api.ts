@@ -29,6 +29,7 @@ import type {
   SkillDeleteBackupPayload,
   CustomInstructionPreviewPayload,
   CustomInstructionStatePayload,
+  TokenStatsPayload,
 } from "@/types";
 import { isTauriRuntime } from "@/lib/tauri-runtime";
 
@@ -116,6 +117,9 @@ export const api = {
 
   testRelayDraft: (input: RelayProviderDraftPayload) =>
     invoke<CoreEnvelope<RelayTestPayload>>("test_relay_draft", { input }),
+
+  loadTokenStats: () =>
+    invoke<CoreEnvelope<TokenStatsPayload>>("load_token_stats"),
 
   loadMcpServers: () =>
     invoke<CoreEnvelope<McpServerListPayload>>("load_mcp_servers"),

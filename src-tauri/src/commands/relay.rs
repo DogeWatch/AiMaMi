@@ -59,3 +59,13 @@ pub async fn test_relay_draft(
         .map(CoreEnvelope::ok)
         .map_err(|error| error.to_string())
 }
+
+#[tauri::command]
+pub fn load_token_stats(
+    repo: State<'_, Mutex<Repository>>,
+) -> Result<CoreEnvelope<crate::core::token_usage::TokenStatsPayload>, String> {
+    let repo = repo.lock().map_err(|error| error.to_string())?;
+    crate::core::token_usage::load_token_stats(repo.paths())
+        .map(CoreEnvelope::ok)
+        .map_err(|error| error.to_string())
+}

@@ -647,3 +647,25 @@ export interface ChangeAnalyticsPayload {
   otherCommands: number;
   series: ChangeDaySeries[];
 }
+
+export interface ModelTokenStats {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  requestCount: number;
+}
+
+export interface TokenStatsBucket {
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  requestCount: number;
+  models: ModelTokenStats[];
+}
+
+export interface TokenStatsPayload {
+  today: TokenStatsBucket;
+  sevenDays: TokenStatsBucket;
+  thirtyDays: TokenStatsBucket;
+}

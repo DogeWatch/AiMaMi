@@ -141,6 +141,7 @@ function MainApp() {
     "mcp",
     "skills",
     "maintenance",
+    "tokenStats",
     "settings",
   ];
 

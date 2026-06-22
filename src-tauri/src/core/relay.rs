@@ -1,4 +1,5 @@
 use crate::core::models::{ApiProxyConfigPayload, CoreError};
+use crate::core::token_usage;
 use crate::platform::paths::CodexPaths;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -29,7 +30,7 @@ const PROVIDER_RETRY_DELAYS: [Duration; 3] = [
     Duration::from_secs(2),
     Duration::from_secs(4),
 ];
-const PROVIDER_MAX_CONCURRENT_REQUESTS: usize = 20;
+const PROVIDER_MAX_CONCURRENT_REQUESTS: usize = 3;
 
 static PROVIDER_RATE_SLOTS: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
 static PROVIDER_CONCURRENCY_LIMITS: OnceLock<
@@ -581,6 +582,15 @@ async fn forward_provider_responses_request(
         .unwrap_or("application/json")
         .to_string();
     let body = response.response.bytes().await?.to_vec();
+    {
+        let parsed = body_value(&body);
+        token_usage::record_token_usage(
+            paths,
+            "",
+            parsed.as_ref().and_then(|v| v.get("usage")),
+            &provider.id,
+        );
+    }
     let body = normalize_provider_sse_body(provider, &content_type, body);
     Ok(RelayHttpResponse {
         status_code,
@@ -626,11 +636,14 @@ async fn forward_provider_chat_responses_request(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("application/json")
         .to_string();
-    let body = response.response.bytes().await?.to_vec();
+    let raw_body = response.response.bytes().await?.to_vec();
+    let model_name = chat_body.get("model").and_then(Value::as_str).unwrap_or("model");
     let body = if is_event_stream(&content_type) {
-        chat_sse_to_responses_sse(&body, chat_body.get("model").and_then(Value::as_str).unwrap_or("model"))?
+        chat_sse_to_responses_sse(&raw_body, model_name)?
     } else {
-        chat_json_to_responses_json(&body, chat_body.get("model").and_then(Value::as_str).unwrap_or("model"))?
+        let parsed = body_value(&raw_body);
+        token_usage::record_token_usage(paths, model_name, parsed.as_ref().and_then(|v| v.get("usage")), &provider.id);
+        chat_json_to_responses_json(&raw_body, model_name)?
     };
     let content_type = if is_event_stream(&content_type) {
         "text/event-stream".to_string()
@@ -846,10 +859,13 @@ async fn write_provider_chat_responses_stream(
         .unwrap_or("application/json")
         .to_string();
     if !is_event_stream(&content_type) {
-        let body = upstream.response.bytes().await?.to_vec();
+        let raw_body = upstream.response.bytes().await?.to_vec();
+        let model_name = chat_body.get("model").and_then(Value::as_str).unwrap_or("model");
+        let parsed = body_value(&raw_body);
+        token_usage::record_token_usage(paths, model_name, parsed.as_ref().and_then(|v| v.get("usage")), &provider.id);
         let body = chat_json_to_responses_json(
-            &body,
-            chat_body.get("model").and_then(Value::as_str).unwrap_or("model"),
+            &raw_body,
+            model_name,
         )?;
         write_http_response(
             stream,
@@ -3141,6 +3157,10 @@ async fn wait_for_provider_rate_slot(provider: &RelayProviderRecord) {
 
 fn provider_limit_key(provider: &RelayProviderRecord) -> String {
     format!("{}|{}", provider.id, provider.base_url)
+}
+
+fn body_value(body: &[u8]) -> Option<Value> {
+    serde_json::from_slice::<Value>(body).ok()
 }
 
 fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {

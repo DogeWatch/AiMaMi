@@ -36,6 +36,7 @@ pub struct CodexPaths {
     pub global_agents_path: PathBuf,
     pub custom_instructions_dir: PathBuf,
     pub custom_instruction_history_dir: PathBuf,
+    pub token_usage_path: PathBuf,
 }
 
 impl CodexPaths {
@@ -80,6 +81,7 @@ impl CodexPaths {
             voice_runtime_path: codexmate_dir.join("voice-runtime.json"),
             global_agents_path: codex_home.join("AGENTS.md"),
             custom_instruction_history_dir: custom_instructions_dir.join("history"),
+            token_usage_path: codexmate_dir.join("token-usage.jsonl"),
             accounts_dir,
             codexmate_dir,
             custom_instructions_dir,

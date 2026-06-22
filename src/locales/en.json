@@ -19,7 +19,8 @@
     "sidebarDarkTheme": "Dark theme",
     "sidebarSystemTheme": "System",
     "sidebarLanguageZh": "简体中文",
-    "sidebarLanguageEn": "English"
+    "sidebarLanguageEn": "English",
+    "tokenStats": "Token Usage"
   },
   "overview": {
     "title": "Dashboard",

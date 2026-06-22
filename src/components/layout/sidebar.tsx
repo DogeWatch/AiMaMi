@@ -7,6 +7,7 @@ import {
   Server,
   Sparkles,
   Wrench,
+  BarChart3,
   Settings,
   Sun,
   Moon,
@@ -40,6 +41,7 @@ export const appNavItems: {
   { route: "mcp", icon: Server, labelKey: "nav.mcp" },
   { route: "skills", icon: Sparkles, labelKey: "nav.skills" },
   { route: "maintenance", icon: Wrench, labelKey: "nav.maintenance" },
+  { route: "tokenStats", icon: BarChart3, labelKey: "nav.tokenStats" },
   { route: "settings", icon: Settings, labelKey: "nav.settings" },
 ];
 

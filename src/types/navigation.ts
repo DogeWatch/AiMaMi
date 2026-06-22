@@ -6,6 +6,7 @@ export type Route =
   | "mcp"
   | "skills"
   | "maintenance"
+  | "tokenStats"
   | "settings";
 
 export const ALL_APP_ROUTES: Route[] = [
@@ -16,6 +17,7 @@ export const ALL_APP_ROUTES: Route[] = [
   "mcp",
   "skills",
   "maintenance",
+  "tokenStats",
   "settings",
 ];
 

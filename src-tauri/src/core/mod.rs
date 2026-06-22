@@ -9,4 +9,5 @@ pub mod quota_store;
 pub mod relay;
 pub mod repository;
 pub mod sessions;
+pub mod token_usage;
 pub mod skills;
