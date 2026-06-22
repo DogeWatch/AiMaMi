@@ -2645,7 +2645,17 @@ fn catalog_model_from_template(
     );
     object.insert("support_verbosity".to_string(), serde_json::json!(false));
     object.remove("default_verbosity");
+    apply_model_context_window(object, slug);
     entry
+}
+
+fn apply_model_context_window(object: &mut serde_json::Map<String, Value>, slug: &str) {
+    let (ctx, max_ctx) = match slug {
+        "glm-5.2" => (1_048_576, 1_048_576),
+        _ => return,
+    };
+    object.insert("context_window".to_string(), serde_json::json!(ctx));
+    object.insert("max_context_window".to_string(), serde_json::json!(max_ctx));
 }
 
 fn catalog_model(slug: &str, display_name: &str, description: &str, priority: i64) -> Value {
@@ -3587,6 +3597,53 @@ mod tests {
         assert_eq!(qwen["default_reasoning_summary"], "none");
         assert_eq!(qwen["support_verbosity"], false);
         assert!(qwen["default_verbosity"].is_null());
+    }
+
+    #[test]
+    fn catalog_glm_model_context_window_is_one_million() {
+        let provider = RelayProviderRecord {
+            id: "dashscope".into(),
+            name: "DashScope".into(),
+            base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".into(),
+            api_key: Some("dashscope-key".into()),
+            env_key: None,
+            model: "glm-5.2".into(),
+            wire_api: "responses".into(),
+            models_sample: vec!["glm-5.2".into()],
+            last_error: None,
+        };
+        let template = serde_json::json!({
+            "slug": "gpt-5.5",
+            "context_window": 272000,
+            "max_context_window": 272000,
+        });
+        let models = provider_catalog_models(&provider, Some(&template));
+        let glm = models
+            .iter()
+            .find(|m| m["slug"] == "glm-5.2")
+            .unwrap();
+        assert_eq!(glm["context_window"], 1_048_576);
+        assert_eq!(glm["max_context_window"], 1_048_576);
+
+        // Non-glm models keep template context_window
+        let qwen_provider = RelayProviderRecord {
+            id: "dashscope".into(),
+            name: "DashScope".into(),
+            base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".into(),
+            api_key: Some("dashscope-key".into()),
+            env_key: None,
+            model: "qwen3.7-max".into(),
+            wire_api: "responses".into(),
+            models_sample: vec!["qwen3.7-max".into()],
+            last_error: None,
+        };
+        let qwen_models = provider_catalog_models(&qwen_provider, Some(&template));
+        let qwen = qwen_models
+            .iter()
+            .find(|m| m["slug"] == "qwen3.7-max")
+            .unwrap();
+        assert_eq!(qwen["context_window"], 272000);
+        assert_eq!(qwen["max_context_window"], 272000);
     }
 
     #[test]
