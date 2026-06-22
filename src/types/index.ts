@@ -669,3 +669,11 @@ export interface TokenStatsPayload {
   sevenDays: TokenStatsBucket;
   thirtyDays: TokenStatsBucket;
 }
+
+export interface DailyTokenStats {
+  date: string;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  requestCount: number;
+}

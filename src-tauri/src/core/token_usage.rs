@@ -261,3 +261,86 @@ mod tests {
         assert_eq!(stats.today.request_count, 0);
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyTokenStats {
+    pub date: String,
+    pub total_tokens: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub request_count: u64,
+}
+
+pub fn load_daily_token_stats(
+    paths: &CodexPaths,
+    days: u32,
+) -> Result<Vec<DailyTokenStats>, CoreError> {
+    let path = paths.codexmate_dir.join(TOKEN_USAGE_FILE);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = std::fs::read_to_string(&path)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let one_day_secs: u64 = 86400;
+    let cutoff = now.saturating_sub(one_day_secs * days as u64);
+
+    let mut by_date: std::collections::BTreeMap<String, DailyTokenStats> = std::collections::BTreeMap::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(entry) = serde_json::from_str::<TokenUsageEntry>(line) else {
+            continue;
+        };
+        if entry.timestamp < cutoff {
+            continue;
+        }
+        let date = format_date(entry.timestamp);
+        let stats = by_date.entry(date.clone()).or_insert(DailyTokenStats {
+            date,
+            total_tokens: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            request_count: 0,
+        });
+        stats.total_tokens += entry.total_tokens;
+        stats.input_tokens += entry.input_tokens;
+        stats.output_tokens += entry.output_tokens;
+        stats.request_count += 1;
+    }
+
+    Ok(by_date.into_values().collect())
+}
+
+fn format_date(timestamp: u64) -> String {
+    let days_since_epoch = timestamp / 86400;
+    let year = 1970 + (days_since_epoch * 400 + 789) / 146097;
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let day_of_year = days_since_epoch - days_to_year(year);
+    let month_days = if leap {
+        [31u64, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    let mut day = day_of_year;
+    let mut month = 1u64;
+    for &md in &month_days {
+        if day < md {
+            break;
+        }
+        day -= md;
+        month += 1;
+    }
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn days_to_year(year: u64) -> u64 {
+    let y = year - 1;
+    365 * y + y / 4 - y / 100 + y / 400
+}

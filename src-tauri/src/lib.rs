@@ -115,6 +115,7 @@ pub fn run() {
             commands::relay::delete_relay_provider,
             commands::relay::test_relay_draft,
             commands::relay::load_token_stats,
+            commands::relay::load_daily_token_stats,
             commands::sessions::load_sessions,
             commands::sessions::delete_sessions,
             commands::sessions::prepare_session_provider_migration,

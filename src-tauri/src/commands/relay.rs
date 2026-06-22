@@ -69,3 +69,14 @@ pub fn load_token_stats(
         .map(CoreEnvelope::ok)
         .map_err(|error| error.to_string())
 }
+
+#[tauri::command]
+pub fn load_daily_token_stats(
+    repo: State<'_, Mutex<Repository>>,
+    days: u32,
+) -> Result<CoreEnvelope<Vec<crate::core::token_usage::DailyTokenStats>>, String> {
+    let repo = repo.lock().map_err(|error| error.to_string())?;
+    crate::core::token_usage::load_daily_token_stats(repo.paths(), days)
+        .map(CoreEnvelope::ok)
+        .map_err(|error| error.to_string())
+}

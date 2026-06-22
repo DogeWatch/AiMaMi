@@ -30,6 +30,7 @@ import type {
   CustomInstructionPreviewPayload,
   CustomInstructionStatePayload,
   TokenStatsPayload,
+  DailyTokenStats,
 } from "@/types";
 import { isTauriRuntime } from "@/lib/tauri-runtime";
 
@@ -120,6 +121,9 @@ export const api = {
 
   loadTokenStats: () =>
     invoke<CoreEnvelope<TokenStatsPayload>>("load_token_stats"),
+
+  loadDailyTokenStats: (days: number) =>
+    invoke<CoreEnvelope<DailyTokenStats[]>>("load_daily_token_stats", { days }),
 
   loadMcpServers: () =>
     invoke<CoreEnvelope<McpServerListPayload>>("load_mcp_servers"),
